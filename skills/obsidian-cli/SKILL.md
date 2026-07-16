@@ -21,6 +21,9 @@ description: Use when saving harness output documents (설계/구현계획/구�
 - 파일명은 **고정 3종** — 날짜·작업명을 파일명에 넣지 않는다 (폴더가 그 역할).
 - `vault_root` · `path_template`은 `harness.config.yaml`의 `storage` 블록에서 읽는다.
   컨피그가 없으면 사용자에게 vault 경로를 확인받는다.
+- **우선순위: 컨피그가 이긴다.** `storage.path_template`이 지정돼 있으면 위 기본 구조
+  대신 **그 템플릿을 그대로** 쓴다(컨피그 = 단일 진실원). 위 경로 계약은 컨피그에
+  path_template이 없을 때의 기본값이다.
 - **`<카테고리>`를 모르면 되묻는다.** 기존 `wiki/` 하위 폴더 목록을 보여주고 고르게 한다.
   임의 창작 금지.
 - `harness/` 폴더는 정의(템플릿·규칙) 전용이다 — **산출 문서를 거기 두지 않는다.**
@@ -32,20 +35,36 @@ description: Use when saving harness output documents (설계/구현계획/구�
   (설계=승인, 구현계획=완료, 구현후보고=보고 등).
 - summary 블록에 **10자 이내 요약** 필수.
 
+## CLI 위치 찾기 (환경별 — 실측 규격)
+
+`obsidian`이 PATH에 없다고 CLI 미가용으로 단정하지 않는다. 순서대로 탐색한다:
+
+1. `command -v obsidian` — 있으면 그대로 사용
+2. **WSL/Windows**: `Obsidian.com` 리다이렉터 전체 경로 호출 (PATH 등록과 무관하게 동작)
+   ```bash
+   ls /mnt/c/Users/*/AppData/Local/Programs/obsidian/Obsidian.com
+   OBS="/mnt/c/Users/<user>/AppData/Local/Programs/obsidian/Obsidian.com"
+   ```
+3. 둘 다 없으면 CLI 미설치 (installer 1.12.7+ 필요)
+
 ## 저장 절차 (순서 고정)
 
 1. **vault_root 확인** — 미지정이면 저장을 건너뛰되 **작업을 막지 않는다**:
    문서를 작업 공간에 보관하고 보고에 남긴다:
    `⚠️ HRN-W010 — storage.vault_root 미지정. 문서는 <경로>에 보관. 컨피그 지정 시 다음부터 저장됨.`
-2. **CLI 가용성 확인** — `obsidian version` 실행 (Obsidian 앱이 켜져 있어야 동작).
+2. **CLI 가용성 확인** — `"$OBS" version` 실행. **⚠️ 실측 함정: 연결 실패여도 exit code가
+   0이다.** 판정은 반드시 출력 텍스트로 한다 — 버전 문자열(예: `1.12.7 (installer 1.12.7)`)이면
+   가용, `"unable to find Obsidian"`이면 미가용(가장 흔한 원인: **앱이 꺼져 있음**).
 3. **가용하면 CLI로 저장** — 링크 자동 갱신 등 이점:
    ```bash
-   obsidian vault=<vault명> create path="wiki/<카테고리>/<프로젝트>/_work/<작업명>/<YYYY-MM-DD>/설계.md" content="..."
+   "$OBS" vault=<vault명> create path="wiki/<카테고리>/<프로젝트>/_work/<작업명>/<YYYY-MM-DD>/설계.md" content="---\ntype: 설계\n..."
    ```
-   (vault= 파라미터는 맨 앞. 멀티라인은 `\n`. 상세: `obsidian help create`)
+   실측 확인: `vault=`는 맨 앞 · `path=`는 vault 루트 기준 · `content=`의 `\n`은 개행으로
+   확장됨(frontmatter 포함 문서 전체를 한 줄로 전달 가능) · 대상 vault는 Obsidian에 등록된
+   vault여야 함(`"$OBS" vaults`로 목록 확인, vault_root가 등록 vault가 아니면 4번 폴백).
 4. **미가용하면 파일 직접 쓰기로 폴백하되, 반드시 경고를 보고에 남긴다**:
-   `⚠️ HRN-W011 — Obsidian CLI 미가용(앱 꺼짐 또는 미등록). 파일 직접 쓰기로 저장함. 링크 자동 갱신 등 CLI 이점 없음.`
-   경고 없는 폴백 = 위반.
+   `⚠️ HRN-W011 — Obsidian CLI 미가용(앱 꺼짐/미등록/미설치). 파일 직접 쓰기로 저장함. 링크 자동 갱신 등 CLI 이점 없음. 앱 실행 후 재시도 가능.`
+   경고 없는 폴백 = 위반. CLI 위치 탐색(위 섹션)을 하지 않고 폴백하는 것도 위반.
 5. **결과 보고** — 저장된 전체 경로 목록 + 사용 방식(CLI/폴백) + 발생 경고를 숨김없이.
 
 ## 완료 기준 (제출 전 자가 점검)
