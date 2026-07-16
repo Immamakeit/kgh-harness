@@ -1,0 +1,18 @@
+# 배포 패키징 제외 목록
+# install/setup · install/update 가 대상 프로젝트로 복사할 때 건너뛰는 파일들.
+# (git에는 커밋됨 — .gitignore와 다름)
+
+# 개발용 문서 — 하네스를 "만드는 데" 필요한 것들
+PRD.md
+CLAUDE.md
+
+# 버전관리 메타
+.git/
+.gitignore
+
+# 개발 문서·테스트 픽스처 (생기면 여기 유지)
+docs/
+tests/
+
+# 이 파일 자신
+.harnessignore
