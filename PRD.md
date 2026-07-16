@@ -61,6 +61,10 @@ harness.config.yaml (단일 진실원, YAML, 런타임 read)
 ```
 
 - **SessionStart 훅 = 방아쇠.** 세션 시작 시 흐름 지침 + resolved 컨피그를 컨텍스트로 주입.
+- **오케스트레이터 구현 방식 확정 (A안):** 얇은 훅(`adapters/claude/hooks/session-start.sh`)
+  + 지휘 플레이북(`core/playbook.md`). 컨피그 해석·검증·게이트·디스패치는 플레이북 지침에
+  따라 메인 세션이 수행한다. 결정적 코드 리졸버로의 승격은 흐름이 실사용으로 검증된 뒤
+  증분으로 진행.
 - **실행 구조 = 오케스트레이터 + 서브에이전트 디스패치.** Claude Code는 메인 세션 도중
   모델 변경이 불가하므로, 구간별 `model`/`effort`는 **각 구간을 서브에이전트로 디스패치**하여 적용한다.
   메인 세션은 지휘자 역할만 한다.
@@ -179,7 +183,9 @@ Claude/Codex의 모델명·규격은 변할 수 있다. 흐름 시작 시 Resolv
 | `HRN-E002` | 미지원/변경된 effort 값 | 값 재입력 또는 어댑터 수정 |
 | `HRN-E003` | 활성 하네스 규격 변동(스펙 mismatch) | 어댑터 업데이트 |
 | `HRN-E004` | 컨피그 스키마 위반(형식) | 컨피그 수정 |
+| `HRN-E005` | 지휘 플레이북(core/playbook.md) 미발견 또는 스킬 파일 미발견 | install/update 재실행 또는 소스 복원 |
 | `HRN-W010` | `vault_root` 미지정 (경고, 비차단) | vault_root 지정 |
+| `HRN-W012` | 프로젝트에 harness.config.yaml 없음 (경고, 비차단 — 플레이북 기본값으로 진행) | install/setup으로 컨피그 생성 |
 
 raw 에러 노출 금지 — 항상 위 형식으로 래핑한다. (vault `script-standards.md` 준수)
 
