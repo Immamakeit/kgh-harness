@@ -94,6 +94,10 @@ kgh-dev-harness/
 git에는 커밋하되, `install/setup`·`install/update`가 대상 프로젝트로 복사할 때
 `.harnessignore` 목록 기준으로 **제외**한다.
 
+**스킬 구동 방식 (확정):** 하네스 스킬은 대상 프로젝트의 `.claude/skills/`에 등록하지
+않는다. 플레이북 §1의 파일 직독 방식(`skills/<이름>/SKILL.md`를 읽고 따름)으로만
+구동한다 — 설치 절차에 Skill 도구 등록은 포함하지 않는다.
+
 **업데이트 규칙:** `install/update`는 (a) 소스 최신본 수신 → (b) `.harnessignore` 적용 복사
 → (c) 기존 `harness.config.yaml` **보존**(사용자 설정 덮어쓰기 금지) → (d) 스키마 변경 시
 마이그레이션 안내(§8 에러 계약 준수) 순으로 동작한다. 업데이트 직후 재세팅 없이
