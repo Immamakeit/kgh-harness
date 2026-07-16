@@ -71,3 +71,5 @@ description: Use when the design/brainstorming discussion for a task has settled
 - [ ] 소스·의존성 무변경 (git status로 확인 가능해야 함)
 - [ ] 최종 응답이 승인/반려 질문으로 끝남 + 부재 시 "승인 후 진행" 명시
 - [ ] 구현계획·구현후보고 선작성 없음
+- [ ] 사용 보고 (하네스 공통 규칙): 그 턴 보고 마지막에 `— 적용 스킬: design-doc`
+      (여러 스킬 적용 시 쉼표로 병기). 미보고 = 위반

@@ -57,3 +57,5 @@ description: Use when implementation and verification are done and it is time to
 - [ ] 구현후보고.md가 `.harness/work/<작업명>/<날짜>/`에 템플릿대로 존재
 - [ ] 직접 확인 시나리오: 단계별 + 기대 결과 + 부정 케이스
 - [ ] 최종 응답이 "통과/실패만 입력" 구조로 종료
+- [ ] 사용 보고 (하네스 공통 규칙): 그 턴 보고 마지막에 `— 적용 스킬: report-doc`
+      (여러 스킬 적용 시 쉼표로 병기). 미보고 = 위반

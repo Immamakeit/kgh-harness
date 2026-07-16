@@ -66,6 +66,8 @@ description: Use when saving harness output documents (설계/구현계획/구�
    `⚠️ HRN-W011 — Obsidian CLI 미가용(앱 꺼짐/미등록/미설치). 파일 직접 쓰기로 저장함. 링크 자동 갱신 등 CLI 이점 없음. 앱 실행 후 재시도 가능.`
    경고 없는 폴백 = 위반. CLI 위치 탐색(위 섹션)을 하지 않고 폴백하는 것도 위반.
 5. **결과 보고** — 저장된 전체 경로 목록 + 사용 방식(CLI/폴백) + 발생 경고를 숨김없이.
+6. **사용 보고 (하네스 공통 규칙)** — 그 턴의 보고 마지막에 반드시 명시한다:
+   `— 적용 스킬: obsidian-cli` (여러 스킬 적용 시 쉼표로 병기). 미보고 = 위반.
 
 ## 완료 기준 (제출 전 자가 점검)
 
@@ -75,3 +77,4 @@ description: Use when saving harness output documents (설계/구현계획/구�
 - [ ] CLI 확인 흔적이 보고에 있음 (사용 or HRN-W011 경고)
 - [ ] vault_root 미지정 시 HRN-W010 + 비차단 보관
 - [ ] 저장 경로 전체 목록 보고
+- [ ] 사용 보고: `— 적용 스킬: obsidian-cli`

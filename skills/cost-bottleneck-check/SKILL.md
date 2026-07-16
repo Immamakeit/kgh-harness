@@ -23,7 +23,8 @@ description: Use when the user asks for a judgment before work — business viab
 2. **가정 금지** — 답을 좌우하는 정보가 없으면 되물음 슬롯에 올리고, 결론을 그 되물음
    기준의 조건부로 쪼갠다.
 3. **"간단히/짧게" 요청을 받아도 슬롯을 삭제하지 않는다** — 슬롯당 1~2줄로 압축한다.
-4. 보고에 적용 사실을 명시한다: `— cost-bottleneck-check 적용`.
+4. **사용 보고 (하네스 공통 규칙)** — 이 스킬이 적용된 턴의 보고 마지막에 반드시 명시한다:
+   `— 적용 스킬: cost-bottleneck-check` (여러 스킬 적용 시 쉼표로 병기). 미보고 = 위반.
 
 ## 업무급 필수 출력 (전 슬롯 REQUIRED)
 
@@ -74,4 +75,4 @@ description: Use when the user asks for a judgment before work — business viab
 - [ ] (업무급) 전수 점검표 전 항목에 "확인함/해당 없음" 기입
 - [ ] 근거 없는 주장 0개
 - [ ] 판정(PASS/REDIRECT/CONDITIONAL) 명시
-- [ ] 적용 사실 명시
+- [ ] 사용 보고: `— 적용 스킬: cost-bottleneck-check`
