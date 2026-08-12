@@ -1,0 +1,188 @@
+#!/usr/bin/env bash
+# install/lib.sh — install/setup · install/update 공용 함수.
+# interactive-script 스킬 표준: 색상 안내/성공/주의/오류, 대화형+디폴트(비TTY 폴백),
+# HRN 에러 포맷터, .harnessignore 기반 배포 복사.
+#
+# source하는 스크립트가 `set -euo pipefail`을 이미 걸었다고 가정한다.
+# 이 파일 자체는 실행되지 않고 source 전용이다.
+
+# ---- 색상 출력 -------------------------------------------------------------
+
+if [ -t 1 ]; then
+  _C_INFO=$'\033[36m'; _C_OK=$'\033[32m'; _C_WARN=$'\033[33m'; _C_ERR=$'\033[31m'; _C_RESET=$'\033[0m'
+else
+  _C_INFO=''; _C_OK=''; _C_WARN=''; _C_ERR=''; _C_RESET=''
+fi
+
+say()  { printf '%s%s%s\n' "$_C_INFO" "$*" "$_C_RESET"; }
+ok()   { printf '%s%s%s\n' "$_C_OK" "$*" "$_C_RESET"; }
+warn() { printf '%s%s%s\n' "$_C_WARN" "$*" "$_C_RESET" >&2; }
+err()  { printf '%s%s%s\n' "$_C_ERR" "$*" "$_C_RESET" >&2; }
+# note: say와 같은 색이지만 stderr로 나간다. ask/ask_yn처럼 함수의 stdout이
+# $(...)로 캡처되어 반환값으로 쓰이는 곳의 내부 로그는 반드시 이걸 쓴다
+# (stdout에 섞으면 반환값이 오염된다).
+note() { printf '%s%s%s\n' "$_C_INFO" "$*" "$_C_RESET" >&2; }
+
+# ---- 대화형 + 디폴트 (비TTY 폴백) ------------------------------------------
+
+# ask "질문 문구" "디폴트값"  → 응답을 stdout으로 echo
+# stdin이 TTY가 아니면(비대화형: CI 등) 디폴트를 채택하고 그 사실을 로그한다.
+ask() {
+  local prompt="$1" default="$2" ans
+  if [ -t 0 ]; then
+    read -rp "${prompt} [기본: ${default:-없음}] " ans
+    printf '%s\n' "${ans:-$default}"
+  else
+    note "(비대화형) ${prompt} → 디폴트 적용: ${default:-없음}"
+    printf '%s\n' "$default"
+  fi
+}
+
+# ask_yn "질문 문구" "Y|N(디폴트)"  → "Y" 또는 "N"을 stdout으로 echo
+ask_yn() {
+  local prompt="$1" default="${2:-Y}" ans hint
+  hint="[Y/n]"
+  [ "$default" = "N" ] && hint="[y/N]"
+  if [ -t 0 ]; then
+    read -rp "${prompt} ${hint} " ans
+    ans="${ans:-$default}"
+  else
+    note "(비대화형) ${prompt} → 디폴트 적용: ${default}"
+    ans="$default"
+  fi
+  case "$ans" in
+    [Yy]*) printf 'Y\n' ;;
+    *) printf 'N\n' ;;
+  esac
+}
+
+# ---- HRN 에러/경고 포맷터 ---------------------------------------------------
+
+# hrn_err "E006" "메시지" "조치 1" "조치 2"
+hrn_err() {
+  local code="$1" msg="$2" a="${3:-}" b="${4:-}"
+  err "HRN-${code} — ${msg}"
+  [ -n "$a" ] && err "  조치 1: ${a}"
+  [ -n "$b" ] && err "  조치 2: ${b}"
+}
+
+# hrn_warn "W010" "메시지" "안내문"
+hrn_warn() {
+  local code="$1" msg="$2" hint="${3:-}"
+  warn "HRN-${code} — ${msg}"
+  [ -n "$hint" ] && warn "  안내: ${hint}"
+}
+
+# ---- .harnessignore 기반 배포 복사 -----------------------------------------
+
+# harnessignore_patterns <소스경로>
+# .harnessignore를 주석/공백 제거 후 한 줄씩 stdout으로 출력.
+harnessignore_patterns() {
+  local src="$1" file
+  file="${src}/.harnessignore"
+  [ -f "$file" ] || return 0
+  grep -vE '^[[:space:]]*#|^[[:space:]]*$' "$file" || true
+}
+
+# harness_copy <소스경로> <대상경로>
+# .harnessignore 제외 목록을 적용해 소스 트리를 대상으로 복사한다. rsync 필수
+# (cp 폴백 없음 — [B1, 2026-07-18] 폴백의 삭제 동기화 가드가 검증 5라운드에 걸쳐
+# 사용자 work/를 지울 수 있는 위험 표면으로 실증되어, 위험 로직을 방어하는 대신
+# 제거했다. 호출자(setup/update)는 이 함수를 부르기 전에 반드시 rsync 존재를
+# 사전 점검에서 확인하고, 없으면 HRN-E008로 중단해야 한다 — 이 함수 자체는
+# rsync가 있다고 가정하고 바로 사용한다).
+# 변경된 파일 수를 stdout에 한 줄 숫자로 마지막에 출력한다(호출자가 캡처).
+harness_copy() {
+  local src="$1" dest="$2"
+  mkdir -p "$dest"
+  local -a excludes=()
+  local pat
+  while IFS= read -r pat; do
+    [ -z "$pat" ] && continue
+    excludes+=(--exclude="$pat")
+  done < <(harnessignore_patterns "$src")
+  # work/·.meta는 target 전용 산출물이라 소스에 애초에 없지만, 방어적으로 명시 제외.
+  # --delete와 함께 쓰여도 --exclude에 매칭되는 항목은 rsync 기본 동작상 삭제 대상에서
+  # 제외된다(rsync는 --delete-excluded가 아닌 한 제외 항목을 "안 보이는" 것으로 취급) —
+  # 그래서 work/·.meta는 재복사에 소스 삭제분을 반영(F5)해도 항상 보존된다.
+  # 앞에 "/"를 붙여 전송 루트 기준 최상위로 앵커링한다(G4) — 앵커가 없으면 rsync는
+  # 임의 깊이의 동명 디렉토리(예: skills/foo/work/)까지 오제외할 수 있다.
+  excludes+=(--exclude="/work/" --exclude="/.meta")
+  local out count
+  # --delete: 소스에서 삭제된 파일을 대상에서도 제거(F5). work/·.meta·기타 제외 목록은
+  # 위 --exclude로 보호되므로 삭제되지 않는다.
+  out="$(rsync -ai --delete "${excludes[@]}" "${src}/" "${dest}/")"
+  [ -n "$out" ] && printf '%s\n' "$out" >&2
+  count=0
+  if [ -n "$out" ]; then
+    count="$(printf '%s\n' "$out" | grep -c . || true)"
+  fi
+  printf '%s\n' "$count"
+}
+
+# ---- .meta 안전 파싱 (F1: source 무검증 실행 금지) --------------------------
+
+# harness_meta_read <.meta 파일 경로>
+# .meta를 절대 source하지 않는다(임의 코드 실행 PoC 방지). 화이트리스트
+# key=value 파싱만 수행 — 허용 키: SOURCE_PATH, SOURCE_COMMIT, INSTALLED_AT,
+# UPDATED_AT. 값은 그대로 문자열로만 대입되며(치환/실행 없음), 허용 키 밖의
+# 줄이나 key=value 형태가 아닌 줄이 하나라도 있으면 파손으로 간주해 1을 반환한다
+# (호출자가 HRN 안내를 낸다). 파일이 없으면 1을 반환한다.
+# 성공 시 SOURCE_PATH/SOURCE_COMMIT/INSTALLED_AT/UPDATED_AT 변수를 호출자
+# 스코프에 설정한다(호출자가 미리 선언한 디폴트는 파일에 없는 키에 한해 유지됨).
+harness_meta_read() {
+  local file="$1" line
+  [ -f "$file" ] || return 1
+  while IFS= read -r line || [ -n "$line" ]; do
+    [ -z "$line" ] && continue
+    # shellcheck disable=SC2034
+    # 의도적으로 local 없이 대입 — 이 함수의 계약(위 주석)이 호출자 스코프에
+    # SOURCE_PATH/SOURCE_COMMIT/INSTALLED_AT/UPDATED_AT을 설정하는 것이라, 여기서는
+    # "사용되지 않음"으로 보이지만 실제 소비자는 setup·update의 전역 스코프다.
+    case "$line" in
+      SOURCE_PATH=*)   SOURCE_PATH="${line#SOURCE_PATH=}" ;;
+      SOURCE_COMMIT=*) SOURCE_COMMIT="${line#SOURCE_COMMIT=}" ;;
+      INSTALLED_AT=*)  INSTALLED_AT="${line#INSTALLED_AT=}" ;;
+      UPDATED_AT=*)    UPDATED_AT="${line#UPDATED_AT=}" ;;
+      *) return 1 ;;
+    esac
+  done < "$file"
+  return 0
+}
+
+# ---- 컨피그 최상위 키 diff ---------------------------------------------------
+
+# yaml_top_keys <yaml파일>  → 최상위(들여쓰기 없는) 키 목록을 정렬해 stdout
+yaml_top_keys() {
+  local f="$1"
+  [ -f "$f" ] || return 0
+  grep -oE '^[A-Za-z_][A-Za-z0-9_]*:' "$f" | sed 's/:$//' | sort -u || true
+}
+
+# ---- 실행체 실존 예외처리 (B7, 설계 §3-4 L1) --------------------------------
+
+# read_active_harness <yaml파일>  → active_harness 값(주석·따옴표 제거)을 stdout
+# 파일이 없거나 키가 없으면 빈 문자열.
+read_active_harness() {
+  local f="$1" line val
+  [ -f "$f" ] || return 0
+  line="$(grep -E '^active_harness:' "$f" | head -n1)"
+  [ -z "$line" ] && return 0
+  val="${line#active_harness:}"
+  val="${val%%#*}"                       # 인라인 주석 제거
+  val="$(printf '%s' "$val" | sed -E 's/^[[:space:]]+|[[:space:]]+$//g')"
+  val="${val%\"}"; val="${val#\"}"       # 따옴표 제거
+  val="${val%\'}"; val="${val#\'}"
+  printf '%s\n' "$val"
+}
+
+# harness_executable_for <active_harness 값>  → 확인할 실행체 이름을 stdout
+# (claude→claude, codex→codex, 그 외/미상→빈 문자열: 확인 방법이 해당 어댑터
+# 소유라 여기서는 판단하지 않고 건너뜀 — 설계 §3-4 L1).
+harness_executable_for() {
+  case "$1" in
+    claude) printf 'claude\n' ;;
+    codex)  printf 'codex\n' ;;
+    *) printf '\n' ;;
+  esac
+}

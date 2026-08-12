@@ -1,0 +1,176 @@
+#!/usr/bin/env bash
+# install/update — kgh-dev-harness 업데이트.
+# 대상 프로젝트에 설치된 배포물 안에서 실행한다: <프로젝트>/.harness/install/update
+#
+# 계약: 루트 harness.config.yaml 미접촉, .harness/work/ 보존, 새 컨피그 키는 안내만
+# (자동 추가 금지). interactive-script 스킬 표준(사전 점검·대화형+디폴트·HRN 코드·
+# 종료 요약) 적용.
+set -euo pipefail
+
+SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+HARNESS_DIR="$(cd "${SCRIPT_DIR}/.." && pwd)"
+TARGET_DIR="$(cd "${HARNESS_DIR}/.." && pwd)"
+# shellcheck source=./lib.sh
+source "${SCRIPT_DIR}/lib.sh"
+
+say "=== kgh-dev-harness 업데이트 ==="
+say "대상 프로젝트: ${TARGET_DIR}"
+echo
+
+# ---- 0. 사전 점검: 필수 실행체 ----------------------------------------------
+
+if ! command -v rsync >/dev/null 2>&1; then
+  hrn_err "E008" "필수 실행체 rsync를 찾을 수 없습니다 (B1: cp 폴백 제거 — rsync 필수)" \
+    "rsync를 설치하세요 (Debian/Ubuntu: sudo apt install rsync, macOS: brew install rsync)" \
+    "rsync가 있는 다른 환경에서 install/update를 실행하세요"
+  exit 1
+fi
+
+# ---- 1. 사전 점검: .meta에서 소스 경로 확인 --------------------------------
+
+source_is_valid() {
+  local p="$1"
+  # G2: install/lib.sh까지 확인한다. core/playbook.md만 있고 install/이 없는
+  # 불량 소스(예: 배포물 트리를 소스로 착각해 가리킨 경우)로 진행하면 재복사가
+  # 대상의 install/ 스크립트 자신을 --delete로 지워 update가 자멸한다. 여기서
+  # 미리 막아 아래 HRN-E006 재입력 흐름으로 보낸다.
+  [ -n "$p" ] && [ -d "$p" ] && [ -f "${p}/core/playbook.md" ] && [ -f "${p}/install/lib.sh" ]
+}
+
+META_FILE="${HARNESS_DIR}/.meta"
+SOURCE_PATH=""
+SOURCE_COMMIT="unknown"
+INSTALLED_AT=""
+UPDATED_AT=""
+META_CORRUPT=0
+if [ -f "$META_FILE" ]; then
+  # F1: source 대신 화이트리스트 key=value 파싱 — .meta는 신뢰할 수 없는 입력으로
+  # 취급한다(임의 코드 실행 PoC 방지). 실패 시 SOURCE_PATH를 비워 아래 E006
+  # 흐름으로 넘어간다(재입력/재설치 안내).
+  if ! harness_meta_read "$META_FILE"; then
+    META_CORRUPT=1
+    SOURCE_PATH=""
+  fi
+fi
+OLD_COMMIT="${SOURCE_COMMIT:-unknown}"
+
+if ! source_is_valid "${SOURCE_PATH:-}"; then
+  if [ "$META_CORRUPT" -eq 1 ]; then
+    hrn_err "E006" ".meta 파일이 손상되었거나 허용되지 않는 형식입니다 (${META_FILE})" \
+      "소스 레포 경로를 다시 입력" \
+      "install/setup으로 재설치 (새 .meta 생성)"
+  else
+    hrn_err "E006" "업데이트 소스 레포를 찾을 수 없음 (${SOURCE_PATH:-미기록})" \
+      "소스 레포 경로를 다시 입력" \
+      "install/setup으로 재설치"
+  fi
+  NEW_PATH="$(ask "소스 레포 경로를 입력하세요 (모르면 Enter로 중단 후 install/setup 재실행)" "")"
+  if ! source_is_valid "$NEW_PATH"; then
+    err "유효한 소스 레포 경로를 확인할 수 없어 업데이트를 진행할 수 없습니다."
+    err "  원인: 입력된 경로에 core/playbook.md 또는 install/lib.sh가 없거나 경로가 비어 있음"
+    err "  해결: 소스 레포(kgh-dev-harness) 경로를 정확히 알아낸 뒤 재실행하거나,"
+    err "        소스 레포에서 install/setup ${TARGET_DIR} 로 재설치하세요."
+    exit 1
+  fi
+  SOURCE_PATH="$NEW_PATH"
+  say "새 소스 경로로 진행합니다: ${SOURCE_PATH}"
+fi
+
+ok "소스 레포 확인: ${SOURCE_PATH}"
+echo
+
+# ---- 2. 소스 갱신 (git pull) ------------------------------------------------
+
+if command -v git >/dev/null 2>&1 && git -C "$SOURCE_PATH" rev-parse --is-inside-work-tree >/dev/null 2>&1; then
+  DO_PULL="$(ask_yn "소스 레포를 git pull 할까요? (${SOURCE_PATH})" "Y")"
+  if [ "$DO_PULL" = "Y" ]; then
+    if git -C "$SOURCE_PATH" pull --ff-only; then
+      ok "소스 레포 갱신 완료"
+    else
+      warn "git pull 실패 — 오프라인이거나 원격 접근 불가일 수 있습니다 (원인: 위 git 출력 참고)."
+      PROCEED="$(ask_yn "현재 로컬 소스 상태로 업데이트를 계속할까요?" "Y")"
+      if [ "$PROCEED" != "Y" ]; then
+        say "업데이트를 중단했습니다. 소스 상태 확인 후 다시 실행하세요."
+        exit 0
+      fi
+      say "현재 로컬 소스 상태로 계속 진행합니다."
+    fi
+  else
+    say "git pull 건너뜀 — 현재 로컬 소스 상태로 진행합니다."
+  fi
+else
+  say "소스가 git 작업 트리가 아님 — pull 단계 건너뜀."
+fi
+echo
+
+# ---- 3. 재복사 (work/·.meta·루트 컨피그는 절대 미접촉) ----------------------
+
+if [ ! -f "${SOURCE_PATH}/.harnessignore" ]; then
+  hrn_err "E005" ".harnessignore 미발견 — 배포 제외 목록 없이는 업데이트할 수 없음 (${SOURCE_PATH})" \
+    "소스 레포 무결성 확인 (git status)" \
+    "소스 레포를 정상 상태로 복원 후 재실행"
+  exit 1
+fi
+
+say "배포물 재복사 중 → ${HARNESS_DIR}"
+CHANGED_FILES="$(harness_copy "$SOURCE_PATH" "$HARNESS_DIR")"
+ok "재복사 완료 (${CHANGED_FILES}개 항목 갱신 — work/·.meta는 소스에 없으므로 그대로 보존됨)"
+echo
+
+# ---- .meta 갱신 (커밋 해시만 갱신, 설치 일시는 유지) ------------------------
+
+NEW_COMMIT="unknown"
+if command -v git >/dev/null 2>&1 && git -C "$SOURCE_PATH" rev-parse HEAD >/dev/null 2>&1; then
+  NEW_COMMIT="$(git -C "$SOURCE_PATH" rev-parse HEAD)"
+fi
+UPDATED_AT="$(date -Iseconds 2>/dev/null || date)"
+
+{
+  printf 'SOURCE_PATH=%s\n' "$SOURCE_PATH"
+  printf 'SOURCE_COMMIT=%s\n' "$NEW_COMMIT"
+  if [ -n "$INSTALLED_AT" ]; then
+    printf 'INSTALLED_AT=%s\n' "$INSTALLED_AT"
+  fi
+  printf 'UPDATED_AT=%s\n' "$UPDATED_AT"
+} > "$META_FILE"
+ok ".meta 갱신: ${OLD_COMMIT:0:12} → ${NEW_COMMIT:0:12}"
+echo
+
+# ---- 4. 컨피그 스키마 diff (안내만, 자동 추가 금지) --------------------------
+
+TARGET_CONFIG="${TARGET_DIR}/harness.config.yaml"
+TEMPLATE_CONFIG="${HARNESS_DIR}/harness.config.yaml"
+NEW_KEYS=()
+
+if [ -f "$TARGET_CONFIG" ]; then
+  while IFS= read -r k; do
+    [ -n "$k" ] && NEW_KEYS+=("$k")
+  done < <(comm -23 <(yaml_top_keys "$TEMPLATE_CONFIG") <(yaml_top_keys "$TARGET_CONFIG"))
+
+  if [ "${#NEW_KEYS[@]}" -gt 0 ]; then
+    say "새 설정 항목 ${#NEW_KEYS[@]}개 발견 (자동 추가 안 함 — 필요 시 harness.config.yaml에 직접 반영):"
+    for k in "${NEW_KEYS[@]}"; do
+      say "  - ${k}"
+    done
+  else
+    ok "컨피그 스키마 변경 없음 (새 최상위 설정 항목 없음)"
+  fi
+else
+  hrn_warn "W012" "프로젝트에 harness.config.yaml 없음" \
+    "install/setup으로 컨피그를 생성하세요 (플레이북 기본값으로 진행 가능)"
+fi
+echo
+
+# ---- 5. 종료 요약 ------------------------------------------------------------
+
+say "=== 업데이트 요약 ==="
+say "소스 커밋 : ${OLD_COMMIT:0:12} → ${NEW_COMMIT:0:12}"
+say "갱신 항목 : ${CHANGED_FILES}개"
+say "보존됨    : .harness/work/ (작업 문서) · .harness/.meta(일시) · 루트 harness.config.yaml(미접촉)"
+if [ "${#NEW_KEYS[@]}" -gt 0 ]; then
+  say "새 설정 키: ${NEW_KEYS[*]}"
+else
+  say "새 설정 키: 없음"
+fi
+echo
+ok "업데이트 완료 — 재세팅 없이 기존 워크플로를 바로 사용할 수 있습니다."

@@ -187,9 +187,15 @@ Claude/Codex의 모델명·규격은 변할 수 있다. 흐름 시작 시 Resolv
 | `HRN-E002` | 미지원/변경된 effort 값 | 값 재입력 또는 어댑터 수정 |
 | `HRN-E003` | 활성 하네스 규격 변동(스펙 mismatch) | 어댑터 업데이트 |
 | `HRN-E004` | 컨피그 스키마 위반(형식) | 컨피그 수정 |
-| `HRN-E005` | 지휘 플레이북(core/playbook.md) 미발견 또는 스킬 파일 미발견 | install/update 재실행 또는 소스 복원 |
+| `HRN-E005` | 지휘 플레이북·스킬 파일 등 필수 배포 파일 미발견 | install/update 재실행 또는 소스 복원 |
+| `HRN-E006` | 업데이트 소스 레포 미발견 | 경로 재입력 또는 재설치 |
+| `HRN-E007` | 대상 경로 생성/쓰기 불가 | 경로·권한 확인 또는 다른 경로 지정 |
+| `HRN-E008` | 필수 실행체·도구 미발견 (하네스 CLI·rsync 등) | 설치 또는 active_harness 변경 |
+| `HRN-E009` | 모델 디스패치 실패 (폐기·권한·플랜) — defaults 1회 폴백 후에도 실패 | 컨피그 model 변경 또는 어댑터 지원 목록 갱신 |
+| `HRN-E010` | active_harness가 미구현 어댑터 (codex·ollama는 추후) | claude로 변경 또는 어댑터 구현 |
 | `HRN-W010` | `vault_root` 미지정 (경고, 비차단) | vault_root 지정 |
 | `HRN-W012` | 프로젝트에 harness.config.yaml 없음 (경고, 비차단 — 플레이북 기본값으로 진행) | install/setup으로 컨피그 생성 |
+| `HRN-W013` | setup 시 하네스 실행체 미발견 (경고, 비차단) | CLI 설치 후 사용 |
 
 raw 에러 노출 금지 — 항상 위 형식으로 래핑한다. (vault `script-standards.md` 준수)
 

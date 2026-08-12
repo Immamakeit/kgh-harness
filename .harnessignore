@@ -16,3 +16,11 @@ tests/
 
 # 이 파일 자신
 .harnessignore
+
+# 소스 레포 자기 자신의 작업 산출물(dogfooding으로 생긴 .harness/work 등) —
+# 배포물에 섞이면 안 됨. 대상 프로젝트의 .harness/는 install/setup이 별도로 만든다.
+.harness/
+
+# 소스 레포 자기 자신의 dogfooding용 Claude Code 설정(훅·권한 등) —
+# 대상 프로젝트의 설정과 무관하며 정보 누출 위험이 있어 배포물에서 제외한다.
+.claude/

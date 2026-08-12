@@ -24,6 +24,18 @@
      보고에 그 사실을 한 줄 명시한다. (Workflow 오케스트레이션 사용 시에만 적용 가능)
    - 컨피그 파일 형식이 깨졌으면 `HRN-E004` 형식으로 보고.
    - `storage.vault_root`가 null이면 저장 단계에서 `HRN-W010` (비차단 — §5).
+   - **실행체·모델 실존 예외처리 (설계 §3-4, B7):**
+     - `active_harness`가 `claude`가 아니면(codex·ollama 등 v1 미구현 어댑터):
+       `❌ HRN-E010 — active_harness '<값>'은 아직 구현되지 않은 어댑터입니다 (PRD §10 추후 작업). 조치: (a) active_harness를 claude로 변경 (b) 해당 어댑터를 구현한 뒤 사용` 보고 후 흐름 시작을 차단한다.
+     - `active_harness`의 실행체가 현재 세션 환경에 없다고 판단되면(예: claude인데
+       `claude` CLI 호출이 되지 않음):
+       `❌ HRN-E008 — 필수 실행체 '<실행체>'를 찾을 수 없습니다. 조치: (a) 해당 CLI 설치 (b) active_harness를 사용 가능한 값으로 변경` 보고 후 흐름 시작을 차단한다.
+     - 구간 디스패치 중 **모델 거부(폐기·권한·플랜 등, 정적 목록으로 못 거르는 런타임
+       실패)** 를 만나면: ① silent 없이 즉시 그 사실을 보고 → ② `defaults.model`로
+       **1회만** 폴백 재디스패치(디스패치하려던 model이 이미 `defaults.model`과
+       같으면 폴백을 생략하고 바로 ③) — 폴백을 실행했다면 결과 보고에 "defaults.model로
+       폴백함"을 명시한다 → ③ 폴백도 실패하면
+       `❌ HRN-E009 — 모델 디스패치 실패(<사유>) — defaults.model 폴백도 실패. 조치: (a) 컨피그의 model 값을 변경 (b) 어댑터(adapters/claude/) 지원 모델 목록을 갱신` 보고 후 해당 구간을 중단한다.
 4. 하네스 스킬 위치: 컨피그의 skills 중 `superpowers:` 접두사는 Skill 도구로 호출,
    나머지(cost-bottleneck-check, design-doc, plan-doc, report-doc, obsidian-cli,
    interactive-script, scope-splitter)는 **하네스 루트 `skills/<이름>/SKILL.md`를 읽고

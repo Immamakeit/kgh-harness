@@ -1,0 +1,266 @@
+#!/usr/bin/env bash
+# install/setup [대상경로] — kgh-dev-harness 최초 설치 + 1회 세팅.
+# 소스 레포(이 파일이 들어있는 레포)에서 실행한다: ./install/setup /path/to/project
+#
+# interactive-script 스킬 표준 적용: 사전 점검 → 대화형+디폴트(비TTY 폴백) →
+# silent 에러 금지(HRN 코드) → 종료 요약.
+set -euo pipefail
+
+SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+SOURCE_DIR="$(cd "${SCRIPT_DIR}/.." && pwd)"
+# shellcheck source=./lib.sh
+source "${SCRIPT_DIR}/lib.sh"
+
+say "=== kgh-dev-harness 설치 ==="
+say "소스 레포: ${SOURCE_DIR}"
+echo
+
+# ---- 1. 사전 점검 ----------------------------------------------------------
+
+if [ ! -f "${SOURCE_DIR}/core/playbook.md" ]; then
+  hrn_err "E005" "소스 레포 무결성 실패 — core/playbook.md 미발견 (${SOURCE_DIR})" \
+    "kgh-dev-harness 레포 루트에서 install/setup을 실행하세요" \
+    "git status/git checkout으로 소스 레포를 정상 상태로 복원하세요"
+  exit 1
+fi
+
+if [ ! -f "${SOURCE_DIR}/.harnessignore" ]; then
+  hrn_err "E005" ".harnessignore 미발견 — 배포 제외 목록 없이는 설치할 수 없음 (${SOURCE_DIR})" \
+    "kgh-dev-harness 레포 루트에서 install/setup을 실행하세요" \
+    "git status/git checkout으로 소스 레포를 정상 상태로 복원하세요"
+  exit 1
+fi
+
+if ! command -v rsync >/dev/null 2>&1; then
+  hrn_err "E008" "필수 실행체 rsync를 찾을 수 없습니다 (B1: cp 폴백 제거 — rsync 필수)" \
+    "rsync를 설치하세요 (Debian/Ubuntu: sudo apt install rsync, macOS: brew install rsync)" \
+    "rsync가 있는 다른 환경에서 install/setup을 실행하세요"
+  exit 1
+fi
+
+HAVE_PYTHON3=1
+if ! command -v python3 >/dev/null 2>&1; then
+  HAVE_PYTHON3=0
+  warn "python3 미발견 — vault_root/훅 자동 반영이 일부 제한됩니다 (수동 안내로 대체, 비차단)."
+fi
+
+ok "사전 점검 통과"
+echo
+
+# ---- 2. 대상 경로 -----------------------------------------------------------
+
+TARGET_ARG="${1:-}"
+if [ -n "$TARGET_ARG" ]; then
+  TARGET_RAW="$TARGET_ARG"
+else
+  TARGET_RAW="$(ask "설치할 대상 프로젝트 경로는?" "$(pwd)")"
+fi
+
+if ! mkdir -p "$TARGET_RAW" 2>/dev/null; then
+  hrn_err "E007" "대상 경로를 생성할 수 없습니다: ${TARGET_RAW}" \
+    "쓰기 권한이 있는 다른 경로를 지정하세요" \
+    "상위 디렉토리 권한을 조정한 뒤 재실행하세요"
+  exit 1
+fi
+TARGET_DIR="$(cd "$TARGET_RAW" && pwd)"
+
+if [ ! -w "$TARGET_DIR" ]; then
+  hrn_err "E007" "대상 경로에 쓰기 권한이 없습니다: ${TARGET_DIR}" \
+    "쓰기 권한이 있는 다른 경로를 지정하세요" \
+    "디렉토리 권한을 조정(chmod 등)한 뒤 재실행하세요"
+  exit 1
+fi
+
+say "대상 경로: ${TARGET_DIR}"
+CONFIRM="$(ask_yn "이 경로에 설치를 진행할까요?" "Y")"
+if [ "$CONFIRM" != "Y" ]; then
+  say "설치를 취소했습니다."
+  exit 0
+fi
+echo
+
+# ---- 2b. 사전 점검 L1: 하네스 실행체 실존 확인 (B7, 설계 §3-4) ---------------
+# 대상에 이미 컨피그가 있으면 그 값을, 신규 설치라 아직 없으면(복사 전) 소스의
+# 템플릿 컨피그 값을 active_harness로 본다. 미발견이어도 설치 자체는 막지 않는다
+# (비차단 경고 W013 — 흐름 시작 시점의 차단(E008/E010)은 플레이북 §1 소관).
+CONFIG_FOR_L1="${TARGET_DIR}/harness.config.yaml"
+[ -f "$CONFIG_FOR_L1" ] || CONFIG_FOR_L1="${SOURCE_DIR}/harness.config.yaml"
+ACTIVE_HARNESS_L1="$(read_active_harness "$CONFIG_FOR_L1")"
+HARNESS_BIN_L1="$(harness_executable_for "$ACTIVE_HARNESS_L1")"
+if [ -n "$HARNESS_BIN_L1" ]; then
+  if command -v "$HARNESS_BIN_L1" >/dev/null 2>&1; then
+    ok "하네스 실행체 확인: ${HARNESS_BIN_L1} (active_harness: ${ACTIVE_HARNESS_L1})"
+  else
+    hrn_warn "W013" "하네스 실행체 미발견: ${HARNESS_BIN_L1} (active_harness: ${ACTIVE_HARNESS_L1})" \
+      "${HARNESS_BIN_L1} CLI를 설치한 뒤 사용하세요 (공식 설치 가이드 참고)"
+  fi
+else
+  note "active_harness='${ACTIVE_HARNESS_L1:-미상}' — 실행체 확인 방법이 정의되지 않아 건너뜁니다 (해당 어댑터 소유)"
+fi
+echo
+
+# ---- 3. 배포물 복사 ----------------------------------------------------------
+
+HARNESS_DIR="${TARGET_DIR}/.harness"
+say "배포물 복사 중 → ${HARNESS_DIR}"
+CHANGED_FILES="$(harness_copy "$SOURCE_DIR" "$HARNESS_DIR")"
+ok "복사 완료 (${CHANGED_FILES}개 항목 갱신)"
+echo
+
+# ---- 4. 컨피그 --------------------------------------------------------------
+
+TARGET_CONFIG="${TARGET_DIR}/harness.config.yaml"
+TEMPLATE_CONFIG="${HARNESS_DIR}/harness.config.yaml"
+CONFIG_CREATED=0
+CONFIG_STATUS=""
+
+if [ -f "$TARGET_CONFIG" ]; then
+  CONFIG_STATUS="기존 유지 (덮어쓰지 않음)"
+  say "harness.config.yaml 이미 존재 — 기존 설정을 그대로 유지합니다: ${TARGET_CONFIG}"
+else
+  if [ ! -f "$TEMPLATE_CONFIG" ]; then
+    hrn_err "E005" "템플릿 컨피그 미발견 (${TEMPLATE_CONFIG})" \
+      "소스 레포 무결성 확인 후 재실행" \
+      "install/update 또는 재설치로 소스를 갱신 후 재시도"
+    exit 1
+  fi
+  cp "$TEMPLATE_CONFIG" "$TARGET_CONFIG"
+  CONFIG_CREATED=1
+  CONFIG_STATUS="신규 생성"
+  ok "harness.config.yaml 생성: ${TARGET_CONFIG}"
+fi
+echo
+
+# ---- 5. 대화형 세팅 (vault_root) --------------------------------------------
+
+VAULT_ROOT=""
+if [ "$CONFIG_CREATED" -eq 1 ]; then
+  VAULT_ROOT="$(ask "storage.vault_root (Obsidian vault 절대경로) — 건너뛰려면 Enter" "")"
+  if [ -n "$VAULT_ROOT" ]; then
+    if [ "$HAVE_PYTHON3" -eq 1 ]; then
+      if python3 - "$TARGET_CONFIG" "$VAULT_ROOT" <<'PYEOF'
+import re
+import sys
+
+path, value = sys.argv[1], sys.argv[2]
+with open(path, encoding="utf-8") as f:
+    text = f.read()
+
+new_text, n = re.subn(
+    r'^(\s*vault_root:\s*)null(\s*#.*)?$',
+    lambda m: f'{m.group(1)}"{value}"' + (m.group(2) or ""),
+    text,
+    count=1,
+    flags=re.M,
+)
+if n == 0:
+    sys.exit(1)
+
+with open(path, "w", encoding="utf-8") as f:
+    f.write(new_text)
+PYEOF
+      then
+        ok "vault_root 설정 완료: ${VAULT_ROOT}"
+      else
+        warn "vault_root 자동 반영 실패 — harness.config.yaml의 storage.vault_root를 직접 수정하세요: \"${VAULT_ROOT}\""
+      fi
+    else
+      warn "python3 미발견 — harness.config.yaml의 storage.vault_root를 직접 \"${VAULT_ROOT}\" 로 수정하세요."
+    fi
+  else
+    hrn_warn "W010" "vault_root 미지정 — 저장 건너뜀 (문서는 작업 공간에 보관)" \
+      "harness.config.yaml의 storage.vault_root를 지정하면 다음부터 저장됩니다"
+  fi
+else
+  say "기존 컨피그를 사용합니다 — vault_root 등 설정 변경은 harness.config.yaml을 직접 수정하세요."
+fi
+echo
+
+# ---- 6. 훅 연결 --------------------------------------------------------------
+
+CLAUDE_SETTINGS_DIR="${TARGET_DIR}/.claude"
+CLAUDE_SETTINGS="${CLAUDE_SETTINGS_DIR}/settings.json"
+# shellcheck disable=SC2016
+# 의도적 단일 따옴표: $CLAUDE_PROJECT_DIR는 이 스크립트가 지금 확장할 값이 아니라,
+# settings.json에 문자 그대로 기록되어 나중에 Claude Code 세션이 훅을 실행할 때
+# 그 세션의 환경변수로 확장되어야 하는 리터럴 문자열이다.
+HOOK_CMD='"$CLAUDE_PROJECT_DIR"/.harness/adapters/claude/hooks/session-start.sh'
+HOOK_STATUS="수동 연결 필요"
+
+if [ "$HAVE_PYTHON3" -eq 1 ]; then
+  mkdir -p "$CLAUDE_SETTINGS_DIR"
+  if python3 - "$CLAUDE_SETTINGS" "$HOOK_CMD" <<'PYEOF'
+import json
+import os
+import sys
+
+path, cmd = sys.argv[1], sys.argv[2]
+data = {}
+if os.path.exists(path):
+    with open(path, encoding="utf-8") as f:
+        raw = f.read().strip()
+    data = json.loads(raw) if raw else {}
+
+hooks = data.setdefault("hooks", {})
+session_start = hooks.setdefault("SessionStart", [])
+
+already = any(
+    h.get("command") == cmd
+    for group in session_start
+    for h in group.get("hooks", [])
+)
+if not already:
+    session_start.append({"hooks": [{"type": "command", "command": cmd}]})
+
+with open(path, "w", encoding="utf-8") as f:
+    json.dump(data, f, ensure_ascii=False, indent=2)
+    f.write("\n")
+PYEOF
+  then
+    HOOK_STATUS="연결됨 (기존 훅 보존)"
+    ok "SessionStart 훅 연결 완료: ${CLAUDE_SETTINGS}"
+  else
+    HOOK_STATUS="병합 실패 — 수동 연결 필요"
+    warn "settings.json 병합 실패 — 아래 내용을 수동으로 추가하세요."
+    warn "  파일: ${CLAUDE_SETTINGS}"
+    warn "  hooks.SessionStart 배열에: { \"hooks\": [ { \"type\": \"command\", \"command\": \"${HOOK_CMD}\" } ] }"
+  fi
+else
+  warn "python3 미발견 — 훅 자동 연결 불가. 아래 내용을 수동으로 추가하세요."
+  warn "  파일: ${CLAUDE_SETTINGS}"
+  warn "  hooks.SessionStart 배열에: { \"hooks\": [ { \"type\": \"command\", \"command\": \"${HOOK_CMD}\" } ] }"
+fi
+echo
+
+# ---- 7. .harness/.meta 기록 --------------------------------------------------
+
+SOURCE_COMMIT="unknown"
+if command -v git >/dev/null 2>&1 && git -C "$SOURCE_DIR" rev-parse HEAD >/dev/null 2>&1; then
+  SOURCE_COMMIT="$(git -C "$SOURCE_DIR" rev-parse HEAD)"
+fi
+INSTALLED_AT="$(date -Iseconds 2>/dev/null || date)"
+
+META_FILE="${HARNESS_DIR}/.meta"
+{
+  printf 'SOURCE_PATH=%s\n' "$SOURCE_DIR"
+  printf 'SOURCE_COMMIT=%s\n' "$SOURCE_COMMIT"
+  printf 'INSTALLED_AT=%s\n' "$INSTALLED_AT"
+} > "$META_FILE"
+ok ".meta 기록: ${META_FILE}"
+echo
+
+# ---- 8. 종료 요약 ------------------------------------------------------------
+
+say "=== 설치 요약 ==="
+say "대상 경로   : ${TARGET_DIR}"
+say "소스 커밋   : ${SOURCE_COMMIT}"
+say "컨피그      : ${CONFIG_STATUS} (${TARGET_CONFIG})"
+say "SessionStart 훅: ${HOOK_STATUS}"
+echo
+say "다음 할 일:"
+if [ "$CONFIG_CREATED" -eq 1 ] && [ -z "$VAULT_ROOT" ]; then
+  say "  - harness.config.yaml의 storage.vault_root 지정 (미지정 시 HRN-W010이 매 실행 안내됩니다)"
+fi
+say "  - ${TARGET_DIR}에서 Claude Code 세션을 시작하면 SessionStart 훅으로 플레이북이 로드됩니다"
+say "  - 다음 업데이트: ${HARNESS_DIR}/install/update"
+ok "설치 완료"
