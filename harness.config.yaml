@@ -13,8 +13,8 @@ workdocs:
 storage:
   enabled: true
   tool: obsidian-cli
-  vault_root: null               # ★ 디폴트 없음 — 사용자 지정 필수. 미지정 시 HRN-W010 (비차단, 매 실행 안내)
-  path_template: "wiki/<카테고리>/<프로젝트>/_work/<작업명>/<YYYY-MM-DD>"
+  vault_root: /mnt/c/gh-obsidian-vaults/LLM-Wiki   # 지정됨 2026-08-14 (미지정 시 HRN-W010)
+  path_template: "wiki/프로젝트/<프로젝트>/_work/<작업명>/<YYYY-MM-DD>"   # 카테고리=프로젝트 확정
   docs: [설계, 구현계획, 구현후보고]
   approval: auto                 # auto = 판정 통과 시 자동 저장 | required = 저장 직전 확인
 
