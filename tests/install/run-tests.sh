@@ -451,6 +451,73 @@ test_harness_cli_missing() {
 }
 
 # ============================================================================
+# 5. 전제: superpowers 플러그인 → HRN-W014 (설계 §3-2·3-4)
+# ============================================================================
+# CLAUDE_CONFIG_DIR을 샌드박스로 가리켜 4분기를 실측한다. ①②③은 REPO_ROOT의 실제
+# harness.config.yaml(clarify·plan·implement·verify 4개 구간에 superpowers: 항목 존재)을
+# 그대로 사용 — 영향 구간명을 하드코딩하지 않고 컨피그에서 읽는지까지 실증한다.
+test_superpowers_prereq() {
+  group "전제: superpowers 플러그인 → HRN-W014"
+
+  # --- ① 매니페스트에 superpowers 있음: W014 미출력, 요약에 확인됨 ---
+  local cfgdir1 target1 out1 rc1
+  cfgdir1="$(mktemp -d "${WORK}/sp-cfg1.XXXXXX")"
+  mkdir -p "${cfgdir1}/plugins"
+  cat > "${cfgdir1}/plugins/installed_plugins.json" <<'EOF'
+{
+  "plugins": {
+    "superpowers@superpowers-marketplace": { "version": "6.1.1", "scope": "user" }
+  }
+}
+EOF
+  target1="$(mktemp -d "${WORK}/sp-target1.XXXXXX")"
+  out1="$(cd "$REPO_ROOT" && CLAUDE_CONFIG_DIR="$cfgdir1" ./install/setup "$target1" </dev/null 2>&1)"; rc1=$?
+  assert_eq "$rc1" "0" "① superpowers 발견 — setup 정상 종료"
+  assert_not_contains "$out1" "HRN-W014" "① superpowers 발견 — W014 미출력"
+  assert_contains "$out1" "확인됨" "① 종료 요약에 '확인됨' 표기"
+
+  # --- ② 매니페스트 있으나 superpowers 키 없음: 비차단·W014·영향 구간 4개 포함 ---
+  local cfgdir2 target2 out2 rc2 stage
+  cfgdir2="$(mktemp -d "${WORK}/sp-cfg2.XXXXXX")"
+  mkdir -p "${cfgdir2}/plugins"
+  cat > "${cfgdir2}/plugins/installed_plugins.json" <<'EOF'
+{ "plugins": { "other-plugin@marketplace": { "version": "1.0.0" } } }
+EOF
+  target2="$(mktemp -d "${WORK}/sp-target2.XXXXXX")"
+  out2="$(cd "$REPO_ROOT" && CLAUDE_CONFIG_DIR="$cfgdir2" ./install/setup "$target2" </dev/null 2>&1)"; rc2=$?
+  assert_eq "$rc2" "0" "② superpowers 키 없음 — 비차단(setup 정상 종료)"
+  assert_contains "$out2" "HRN-W014" "② superpowers 키 없음 — W014 출력"
+  # W014 라인의 "영향 구간:" 필드만 추출해서 검사한다. out2 전체를 grep하면
+  # skills/plan-doc/(rsync 복사 로그)·superpowers:writing-plans(스킬명)에 부분매칭돼
+  # 'plan' 어서션이 결함 주입에도 반응하지 않는 tautology가 됐다(검증 루프 1회차 F3).
+  local stages_field2
+  stages_field2="$(printf '%s\n' "$out2" | sed -n 's/.*영향 구간: \([^(]*\)(스킬:.*/\1/p')"
+  for stage in clarify plan implement verify; do
+    assert_contains "$stages_field2" "$stage" "② W014 '영향 구간:' 필드에 '${stage}' 포함"
+  done
+  assert_present "${target2}/.harness/.meta" "② 비차단 — 설치는 끝까지 완료(.meta 존재)"
+
+  # --- ③ 매니페스트 파일 부재: 비차단·W014·확인 경로 문자열 포함 ---
+  local cfgdir3 target3 out3 rc3
+  cfgdir3="$(mktemp -d "${WORK}/sp-cfg3.XXXXXX")"
+  target3="$(mktemp -d "${WORK}/sp-target3.XXXXXX")"
+  out3="$(cd "$REPO_ROOT" && CLAUDE_CONFIG_DIR="$cfgdir3" ./install/setup "$target3" </dev/null 2>&1)"; rc3=$?
+  assert_eq "$rc3" "0" "③ 매니페스트 부재 — 비차단(setup 정상 종료)"
+  assert_contains "$out3" "HRN-W014" "③ 매니페스트 부재 — W014 출력"
+  assert_contains "$out3" "${cfgdir3}/plugins/installed_plugins.json" "③ W014 메시지에 확인 경로 포함"
+
+  # --- ④ 컨피그에 superpowers: 0개: 점검 자체를 건너뜀(W014 미출력) ---
+  local src4 cfgdir4 target4 out4 rc4
+  src4="$(mktemp -d "${WORK}/sp-src4.XXXXXX")"
+  build_fake_source "$src4"   # fixture 컨피그에는 stages 자체가 없음 → superpowers: 0개
+  cfgdir4="$(mktemp -d "${WORK}/sp-cfg4.XXXXXX")"
+  target4="$(mktemp -d "${WORK}/sp-target4.XXXXXX")"
+  out4="$(cd "$src4" && CLAUDE_CONFIG_DIR="$cfgdir4" ./install/setup "$target4" </dev/null 2>&1)"; rc4=$?
+  assert_eq "$rc4" "0" "④ superpowers 0개 — setup 정상 종료"
+  assert_not_contains "$out4" "HRN-W014" "④ superpowers 0개 — 점검 건너뜀(W014 미출력)"
+}
+
+# ============================================================================
 # 실행
 # ============================================================================
 test_rsync_contract
@@ -459,6 +526,7 @@ test_update_contract
 test_meta_corruption
 test_rsync_missing
 test_harness_cli_missing
+test_superpowers_prereq
 
 printf '\n=== 요약 ===\n'
 printf 'PASS: %d  FAIL: %d\n' "$PASS" "$FAIL"

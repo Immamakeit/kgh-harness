@@ -40,6 +40,11 @@
    나머지(cost-bottleneck-check, design-doc, plan-doc, report-doc, obsidian-cli,
    interactive-script, scope-splitter)는 **하네스 루트 `skills/<이름>/SKILL.md`를 읽고
    그 지침을 따른다.** 파일이 없으면 `HRN-E005` 보고.
+   - **전제 깨짐 (superpowers 미설치, PRD R4·R6, `HRN-W014`):** Skill 도구로 `superpowers:` 스킬을 호출했는데 "해당 스킬 없음"으로 실패하면:
+     ① silent 금지 — 즉시 `⚠️ HRN-W014 — superpowers 스킬 '<이름>' 미발견` 보고.
+     ② **흐름을 막지 않는다.** 해당 구간을 그 스킬 없이 진행하고, 그 사실을 구간 보고에 명시한다.
+     ③ 복구 경로 2개를 함께 출력: (a) `/plugin marketplace add obra/superpowers-marketplace` → `/plugin install superpowers`로 플러그인 설치 (b) `harness.config.yaml`의 해당 `skills[]`에서 `superpowers:` 항목 제거.
+     차단(E코드)으로 올리지 않는 이유: superpowers 없이도 나머지 7구간과 내 스킬 7종은 정상 동작하므로 차단은 과잉이다. setup 시점의 `HRN-W014`(install/setup L1b)와 이 런타임 보고는 둘 다 비차단으로 통일된 계약이다.
 
 ## 2. 구간 실행표 (workflow 9단계)
 

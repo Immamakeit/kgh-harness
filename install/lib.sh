@@ -56,6 +56,26 @@ ask_yn() {
   esac
 }
 
+# ---- 문자열 유틸 ------------------------------------------------------------
+
+# join_lines <구분자>  — stdin의 줄들을 <구분자>로 이어붙여 stdout에 낸다(개행 없음).
+# `paste -sd`는 구분자를 "문자 리스트"로 취급해 줄마다 한 글자씩 순환 삽입한다.
+# 다중바이트 구분자(예: '·', UTF-8 2바이트)는 바이트 단위로 쪼개져 깨지고, 다문자
+# 구분자(예: ', ')도 같은 이유로 순환되어 "a,b c,d"처럼 어긋난다(검증 루프 1회차
+# F1/F2). 그래서 paste -d 대신 순수 셸 루프로 이어붙인다.
+join_lines() {
+  local sep="$1" first=1 line out=""
+  while IFS= read -r line; do
+    if [ "$first" -eq 1 ]; then
+      out="$line"
+      first=0
+    else
+      out="${out}${sep}${line}"
+    fi
+  done
+  printf '%s' "$out"
+}
+
 # ---- HRN 에러/경고 포맷터 ---------------------------------------------------
 
 # hrn_err "E006" "메시지" "조치 1" "조치 2"
@@ -66,11 +86,18 @@ hrn_err() {
   [ -n "$b" ] && err "  조치 2: ${b}"
 }
 
-# hrn_warn "W010" "메시지" "안내문"
+# hrn_warn "W010" "메시지" "안내문" ["안내문2"]
+# 안내문을 1개만 주면 기존과 동일하게 "안내: ..." 한 줄. 2개를 주면(W014처럼 복구
+# 경로가 2가지인 경고) "안내 1:"/"안내 2:" 두 줄로 나눠 출력한다.
 hrn_warn() {
-  local code="$1" msg="$2" hint="${3:-}"
+  local code="$1" msg="$2" a="${3:-}" b="${4:-}"
   warn "HRN-${code} — ${msg}"
-  [ -n "$hint" ] && warn "  안내: ${hint}"
+  if [ -n "$a" ] && [ -n "$b" ]; then
+    warn "  안내 1: ${a}"
+    warn "  안내 2: ${b}"
+  elif [ -n "$a" ]; then
+    warn "  안내: ${a}"
+  fi
 }
 
 # ---- .harnessignore 기반 배포 복사 -----------------------------------------
@@ -185,4 +212,102 @@ harness_executable_for() {
     codex)  printf 'codex\n' ;;
     *) printf '\n' ;;
   esac
+}
+
+# ---- superpowers 전제 검출 (설계 §3-2, HRN-W014) ----------------------------
+
+# superpowers_skills_in_config <yaml파일>
+# stages.*.skills 배열에서 "superpowers:" 접두사 항목을 "<구간>:<스킬>" 형식으로
+# 한 줄씩 stdout에 낸다(0개면 빈 출력). 영향 구간명·스킬명을 하드코딩하지 않고
+# 컨피그를 단일 소스로 읽기 위한 헬퍼 — YAML 라이브러리 없이, harness.config.yaml의
+# 정해진 들여쓰기(구간명 2칸, skills: 4칸 인라인 배열)만 대상으로 하는 최소 파서다.
+# 파일이 없으면 빈 출력.
+superpowers_skills_in_config() {
+  local f="$1" in_stages=0 stage="" line items item
+  [ -f "$f" ] || return 0
+  while IFS= read -r line || [ -n "$line" ]; do
+    if [[ "$line" =~ ^stages:[[:space:]]*(#.*)?$ ]]; then
+      in_stages=1
+      continue
+    fi
+    [ "$in_stages" -eq 0 ] && continue
+    if [[ "$line" =~ ^[A-Za-z_] ]]; then
+      # 들여쓰기 없는 다음 최상위 키 — stages 블록 종료.
+      in_stages=0
+      continue
+    fi
+    if [[ "$line" =~ ^[[:space:]]{2}([A-Za-z_][A-Za-z0-9_]*): ]]; then
+      stage="${BASH_REMATCH[1]}"
+      continue
+    fi
+    if [ -n "$stage" ] && [[ "$line" =~ skills:[[:space:]]*\[([^]]*)\] ]]; then
+      items="${BASH_REMATCH[1]}"
+      IFS=',' read -ra _sp_items <<< "$items"
+      for item in "${_sp_items[@]}"; do
+        item="$(printf '%s' "$item" | sed -E 's/^[[:space:]]+|[[:space:]]+$//g')"
+        case "$item" in
+          superpowers:*) printf '%s:%s\n' "$stage" "$item" ;;
+        esac
+      done
+    fi
+  done < "$f"
+  return 0
+}
+
+# detect_superpowers  → 2줄을 stdout으로 출력:
+#   1줄: "found:<버전>" | "notfound" | "nomanifest" | "unknown"
+#   2줄: 확인한 매니페스트 경로(호출자가 W014 안내 문구에 사용)
+# ${CLAUDE_CONFIG_DIR:-$HOME/.claude}/plugins/installed_plugins.json 을 조회한다.
+# python3 있으면 JSON 파싱, 없으면 `grep -q '"superpowers@'` 폴백. 둘 다 불가면
+# fail-open으로 "unknown"을 반환한다(오탐보다 미확인 쪽이 낫다 — 설계 §3-2 6항).
+# 파일이 없으면(플러그인을 한 번도 설치한 적 없는 것으로 간주) "nomanifest".
+detect_superpowers() {
+  local manifest="${CLAUDE_CONFIG_DIR:-$HOME/.claude}/plugins/installed_plugins.json"
+  if [ ! -f "$manifest" ]; then
+    printf 'nomanifest\n%s\n' "$manifest"
+    return 0
+  fi
+  if command -v python3 >/dev/null 2>&1; then
+    local result
+    result="$(python3 - "$manifest" <<'PYEOF'
+import json
+import sys
+
+path = sys.argv[1]
+try:
+    with open(path, encoding="utf-8") as f:
+        data = json.load(f)
+except Exception:
+    print("unknown")
+    sys.exit(0)
+
+plugins = data.get("plugins", {}) if isinstance(data, dict) else {}
+if not isinstance(plugins, dict):
+    print("unknown")
+    sys.exit(0)
+
+for key, val in plugins.items():
+    if isinstance(key, str) and key.startswith("superpowers@"):
+        version = "unknown"
+        if isinstance(val, dict):
+            version = val.get("version", "unknown")
+        print(f"found:{version}")
+        sys.exit(0)
+print("notfound")
+PYEOF
+)"
+    [ -z "$result" ] && result="unknown"
+    printf '%s\n%s\n' "$result" "$manifest"
+    return 0
+  fi
+  if command -v grep >/dev/null 2>&1; then
+    if grep -q '"superpowers@' "$manifest" 2>/dev/null; then
+      printf 'found:unknown\n%s\n' "$manifest"
+    else
+      printf 'notfound\n%s\n' "$manifest"
+    fi
+    return 0
+  fi
+  printf 'unknown\n%s\n' "$manifest"
+  return 0
 }

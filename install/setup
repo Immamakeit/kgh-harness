@@ -99,6 +99,46 @@ else
 fi
 echo
 
+# ---- 2c. 사전 점검 L1b: superpowers 플러그인 전제 확인 (설계 §3-2, HRN-W014) --
+# L1과 같은 컨피그(CONFIG_FOR_L1)를 본다. active_harness가 claude일 때만 적용한다
+# (플러그인 매니페스트는 Claude Code 고유 규격 → 다른 값이면 해당 어댑터 소관이라
+# note로 건너뜀). 컨피그에 superpowers: 스킬이 0개면 점검 자체를 건너뛴다(컨피그에서
+# 다 빼버린 사용자를 괴롭히지 않음). 비차단 — W014를 내도 설치는 끝까지 진행한다.
+SUPERPOWERS_STATUS="점검 안 함"
+if [ "$ACTIVE_HARNESS_L1" = "claude" ]; then
+  SP_STAGE_SKILLS="$(superpowers_skills_in_config "$CONFIG_FOR_L1")"
+  if [ -z "$SP_STAGE_SKILLS" ]; then
+    note "컨피그에 superpowers: 스킬이 없어 전제 점검을 건너뜁니다"
+  else
+    SP_DETECT="$(detect_superpowers)"
+    SP_RESULT="$(printf '%s\n' "$SP_DETECT" | sed -n '1p')"
+    SP_MANIFEST="$(printf '%s\n' "$SP_DETECT" | sed -n '2p')"
+    SP_STAGE_COUNT="$(printf '%s\n' "$SP_STAGE_SKILLS" | grep -c . || true)"
+    case "$SP_RESULT" in
+      found:*)
+        SP_VERSION="${SP_RESULT#found:}"
+        SUPERPOWERS_STATUS="확인됨 v${SP_VERSION}"
+        ok "superpowers 확인: v${SP_VERSION} (${SP_STAGE_COUNT}개 구간에서 사용)"
+        ;;
+      unknown)
+        SUPERPOWERS_STATUS="확인 불가, 건너뜀"
+        note "superpowers 설치 여부를 확인할 수 없어 건너뜁니다 (python3/grep 모두 미발견 — fail-open)"
+        ;;
+      notfound|nomanifest)
+        SUPERPOWERS_STATUS="미발견(W014)"
+        SP_STAGES_FMT="$(printf '%s\n' "$SP_STAGE_SKILLS" | cut -d: -f1 | sort -u | join_lines '·')"
+        SP_SKILLS_FMT="$(printf '%s\n' "$SP_STAGE_SKILLS" | cut -d: -f2- | sort -u | join_lines ', ')"
+        hrn_warn "W014" "superpowers 플러그인 미발견 (확인 경로: ${SP_MANIFEST}) — 영향 구간: ${SP_STAGES_FMT} (스킬: ${SP_SKILLS_FMT})" \
+          "/plugin marketplace add obra/superpowers-marketplace 후 /plugin install superpowers 로 플러그인 설치" \
+          "harness.config.yaml의 해당 stages[].skills에서 superpowers: 항목 제거"
+        ;;
+    esac
+  fi
+else
+  note "active_harness='${ACTIVE_HARNESS_L1:-미상}' — superpowers 전제 점검은 Claude Code 전용이라 건너뜁니다"
+fi
+echo
+
 # ---- 3. 배포물 복사 ----------------------------------------------------------
 
 HARNESS_DIR="${TARGET_DIR}/.harness"
@@ -256,6 +296,7 @@ say "대상 경로   : ${TARGET_DIR}"
 say "소스 커밋   : ${SOURCE_COMMIT}"
 say "컨피그      : ${CONFIG_STATUS} (${TARGET_CONFIG})"
 say "SessionStart 훅: ${HOOK_STATUS}"
+say "superpowers : ${SUPERPOWERS_STATUS}"
 echo
 say "다음 할 일:"
 if [ "$CONFIG_CREATED" -eq 1 ] && [ -z "$VAULT_ROOT" ]; then

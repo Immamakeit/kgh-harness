@@ -26,9 +26,9 @@ AI 코딩 하네스(Claude Code, 추후 Codex)에 설치하는 **개발 워크�
 | R1 | 멀티 하네스: Claude Code **와** Codex, 하나 또는 둘 다 | v1은 Claude 완성, Codex는 §10 추후 작업 |
 | R2 | 구간(단계)별 `model` · `effort`(추론레벨) 설정 | 각 하네스 규격에 맞춰 매핑 |
 | R3 | 구간별 `skills[]` 로드 — 넣기/빼기/교체 전부 컨피그에서 | |
-| R4 | 패키지 설치형 — 어느 프로젝트든 설치만 하면 동작 | 대화형 설치 스크립트 |
+| R4 | 패키지 설치형 — **superpowers 플러그인이 설치된** Claude Code 환경이면 어느 프로젝트든 설치만 하면 동작 | 대화형 설치 스크립트, 전제 미충족 시 `HRN-W014` 안내 |
 | R5 | 루트 컨피그(`harness.config.yaml`) 단일 진실원 + 즉시 반영 | YAML |
-| R6 | 스킬 내장: 내 스킬(vendored) + 오픈소스 스킬(핀 고정 pull) | superpowers 등 |
+| R6 | 스킬 내장: 내 스킬(vendored) + **오픈소스 스킬은 사용자 전역 설치를 전제**(superpowers) | 핀 고정 pull은 §10 추후 |
 | R7 | 승인 게이트 최소화 — 사용자는 확인/승인만 | §6 게이트 구성 |
 | R8 | silent 에러 금지 — 명시적 에러코드 + 2가지 복구 경로 안내 | §8 에러 계약 |
 | R9 | 산출 문서 3종(설계/구현계획/구현후보고)을 obsidian-cli로 vault 저장 | §7 저장 규칙 |
@@ -38,10 +38,11 @@ AI 코딩 하네스(Claude Code, 추후 Codex)에 설치하는 **개발 워크�
 ## 3. v1 범위
 
 **포함:** Claude Code 어댑터 · 컨피그 로더/리졸버 · 오케스트레이터 지침 · SessionStart 훅 ·
-하이브리드 스킬 번들(내 스킬 6종 신규 제작 + 오픈소스 핀 고정) · 대화형 설치 스크립트 ·
+내 스킬 번들(6종 신규 제작) + superpowers 전제 · 대화형 설치 스크립트 ·
 9단계 워크플로 + 게이트.
 
-**제외(추후, §10):** Codex 어댑터 구현 · **Ollama(로컬 모델) 어댑터**(Codex 적용 이후 착수).
+**제외(추후, §10):** Codex 어댑터 구현 · **Ollama(로컬 모델) 어댑터**(Codex 적용 이후 착수) ·
+**오픈소스 스킬 vendoring·버전 핀 고정**(superpowers는 v1에서 사용자 전역 설치 전제로만 다룸).
 단, **어댑터 추상화는 v1 설계 시점부터 로컬 모델 런타임까지 수용 가능한 범위로** 잡는다 —
 model/effort 개념이 하네스·런타임마다 다름(클라우드 모델명 vs 로컬 모델 태그, effort 미지원
 런타임 존재)을 전제로 인터페이스를 설계한다.
@@ -81,7 +82,6 @@ kgh-dev-harness/
 │  ├─ claude/                 # v1
 │  └─ codex/                  # 스텁 (추후)
 ├─ skills/                    # 내 스킬 (vendored, 소유)
-├─ vendor/skills/             # 오픈소스 스킬 (버전 핀 고정 pull)
 ├─ templates/                 # 설계·구현계획·구현후보고 (vault와 동기화)
 ├─ install/                   # 대화형 설치·세팅 스크립트 (script-standards 준수)
 │  ├─ setup                   #   최초 설치 + 1회 세팅
@@ -196,6 +196,7 @@ Claude/Codex의 모델명·규격은 변할 수 있다. 흐름 시작 시 Resolv
 | `HRN-W010` | `vault_root` 미지정 (경고, 비차단) | vault_root 지정 |
 | `HRN-W012` | 프로젝트에 harness.config.yaml 없음 (경고, 비차단 — 플레이북 기본값으로 진행) | install/setup으로 컨피그 생성 |
 | `HRN-W013` | setup 시 하네스 실행체 미발견 (경고, 비차단) | CLI 설치 후 사용 |
+| `HRN-W014` | superpowers 플러그인 미발견 (경고, 비차단) | 플러그인 설치 또는 컨피그에서 제거 |
 
 raw 에러 노출 금지 — 항상 위 형식으로 래핑한다. (vault `script-standards.md` 준수)
 
@@ -220,3 +221,6 @@ raw 에러 노출 금지 — 항상 위 형식으로 래핑한다. (vault `scrip
   설계는 v1부터 이 범위를 포함한다**(§3).
 - `active_harness: [claude, codex]` 동시 모드 검증.
 - 흐름 UI 단위 제어(vault workflow.md 4장 아이디어) — 대화형 TUI 확장.
+- **오픈소스 스킬 vendoring / 버전 핀 고정 pull**: v1은 superpowers를 사용자 전역 설치
+  전제로만 다룬다(R6). 포기가 아니라 이월 — `vendor/skills/` 디렉토리·핀 고정 pull
+  파이프라인은 이 항목이 착수될 때 신설한다.
