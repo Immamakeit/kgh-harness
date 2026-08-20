@@ -1,0 +1,38 @@
+# 하네스 컨피그 스키마 — 구조와 디폴트값의 단일 진실원.
+# 값의 옳고 그름(모델명·effort)은 여기서 판단하지 않는다:
+# validated_by: adapter 로 표시하고 adapters/<active_harness>/capabilities.yaml 에 위임한다.
+version: 1
+
+top_level:
+  active_harness: { type: string, required: true, validated_by: adapter }
+  defaults:       { type: map,    required: false }
+  workdocs:       { type: map,    required: false }
+  storage:        { type: map,    required: false }
+  stages:         { type: map,    required: false }
+
+defaults:
+  model:  { type: string, default: sonnet, validated_by: adapter }
+  effort: { type: string, default: medium, validated_by: adapter }
+
+workdocs:
+  path: { type: string, default: .harness/work }
+
+storage:
+  enabled:       { type: bool, default: true }
+  tool:          { type: enum, values: [obsidian-cli], default: obsidian-cli }
+  vault_root:    { type: string, default: null, nullable: true }
+  path_template: { type: string, required: false }
+  docs:          { type: list, default: [설계, 구현계획, 구현후보고] }
+  approval:      { type: enum, values: [auto, required], default: auto }
+
+stages:
+  known: [entry_gate, clarify, impact, design, plan, implement,
+          verify, report, judgment, storage]
+  keys:
+    model:    { type: string, validated_by: adapter }
+    effort:   { type: string, validated_by: adapter }
+    skills:   { type: list, item: skill_ref }
+    gate:     { type: enum, values: [required, auto, optional] }
+    enabled:  { type: enum, values: ["true", "false", conditional] }
+    dispatch: { type: bool }
+    loop:     { type: enum, values: [auto, manual] }

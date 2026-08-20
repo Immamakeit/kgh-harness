@@ -1,0 +1,11 @@
+# Claude 어댑터가 소유하는 허용값. config/schema.yaml 의 validated_by: adapter 위임 대상.
+harness: claude
+implemented: true
+
+models: [opus, sonnet, haiku, fable]
+
+effort:
+  values: [low, medium, high]
+  # Agent 디스패치는 effort 를 지원하지 않는다 (core/playbook.md §1).
+  # 검증기는 이 값이 false면 컨피그에 effort가 있어도 "무시됨"을 보고한다.
+  dispatch_supported: false
