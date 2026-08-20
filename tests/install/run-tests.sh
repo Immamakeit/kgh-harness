@@ -28,8 +28,10 @@ WORK="$(mktemp -d "${TMP_BASE}/kgh-harness-install-tests.XXXXXX")" || {
   echo "치명적 오류: 격리 작업 디렉토리를 만들 수 없습니다 (TMPDIR=${TMP_BASE})" >&2
   exit 1
 }
-# shellcheck disable=SC2317
-# trap으로만 호출되어 shellcheck 정적 분석에는 "도달 불가"로 보인다 — 실제로는 EXIT 시 실행됨.
+# shellcheck disable=SC2329
+# 검증 루프: 원래 SC2317("도달 불가")로 표기돼 있었으나 shellcheck 0.11.0 실측 결과
+# 실제 발생 코드는 SC2329("함수가 호출되지 않음")였다 — trap으로만 호출되어 직접
+# 호출부가 안 보이는 탓에 미사용으로 오판되지만, 실제로는 EXIT 시 실행된다.
 cleanup() { rm -rf "$WORK"; }
 trap cleanup EXIT
 
@@ -518,6 +520,91 @@ EOF
 }
 
 # ============================================================================
+# 6. join_lines 단위 테스트 (install/lib.sh)
+# ============================================================================
+test_join_lines() {
+  group "join_lines 단위 테스트"
+
+  local out
+  out="$(printf '' | join_lines '·')"
+  assert_eq "$out" "" "0줄 입력 → 빈 출력"
+
+  out="$(printf 'a\n' | join_lines '·')"
+  assert_eq "$out" "a" "1줄 입력 → 그 줄 그대로"
+
+  out="$(printf 'a\nb\nc\n' | join_lines '·')"
+  assert_eq "$out" "a·b·c" "다줄(개행 종료) → 구분자로 연결"
+
+  out="$(printf 'a\nb\nc' | join_lines '·')"
+  assert_eq "$out" "a·b·c" "개행 없이 끝나는 마지막 줄도 유실 없이 포함됨"
+
+  out="$(printf 'a\nb\nc\n' | join_lines '·')"
+  local hex
+  hex="$(printf '%s' "$out" | xxd -p | tr -d '\n')"
+  assert_contains "$hex" "c2b7" "다중바이트 구분자(·)가 바이트 손상 없이 c2b7로 보존됨"
+}
+
+# ---- 컨피그 검증기 (config-schema) -----------------------------------------
+test_validate_config() {
+  group "컨피그 검증기 — install/validate-config"
+
+  local vc="${REPO_ROOT}/install/validate-config"
+  local dir="${WORK}/vc"; mkdir -p "$dir"
+
+  if [ ! -x "$vc" ]; then
+    fail_case "검증기 실존" "install/validate-config 없음 (RED 기대 상태)"
+    return
+  fi
+
+  # (1) 정상 컨피그 → 통과
+  cp "${REPO_ROOT}/harness.config.yaml" "${dir}/harness.config.yaml"
+  if "$vc" "${dir}/harness.config.yaml" >"${dir}/ok.log" 2>&1; then
+    pass_case "정상 컨피그 통과 (exit 0)"
+  else
+    fail_case "정상 컨피그 통과" "exit=$? — $(tail -2 "${dir}/ok.log")"
+  fi
+
+  # (2) 알 수 없는 구간 → HRN-E004 차단
+  sed 's/^  design:/  desing:/' "${REPO_ROOT}/harness.config.yaml" > "${dir}/typo-stage.yaml"
+  "$vc" "${dir}/typo-stage.yaml" >"${dir}/e004a.log" 2>&1 && \
+    fail_case "알 수 없는 구간 차단" "exit 0으로 통과함" || \
+    { assert_contains "$(cat "${dir}/e004a.log")" "HRN-E004" "알 수 없는 구간 → HRN-E004"
+      assert_contains "$(cat "${dir}/e004a.log")" "desing" "오타 구간명을 그대로 지목"; }
+
+  # (3) 알 수 없는 키 → HRN-E004 차단
+  sed 's/^    model: opus/    modle: opus/' "${REPO_ROOT}/harness.config.yaml" > "${dir}/typo-key.yaml"
+  "$vc" "${dir}/typo-key.yaml" >"${dir}/e004b.log" 2>&1 && \
+    fail_case "알 수 없는 키 차단" "exit 0으로 통과함" || \
+    assert_contains "$(cat "${dir}/e004b.log")" "HRN-E004" "알 수 없는 키 → HRN-E004"
+
+  # (4) 미지원 model 값 → HRN-E001 차단
+  sed 's/^    model: opus/    model: gpt4/' "${REPO_ROOT}/harness.config.yaml" > "${dir}/bad-model.yaml"
+  "$vc" "${dir}/bad-model.yaml" >"${dir}/e001.log" 2>&1 && \
+    fail_case "미지원 model 차단" "exit 0으로 통과함" || \
+    { assert_contains "$(cat "${dir}/e001.log")" "HRN-E001" "미지원 model → HRN-E001"
+      assert_contains "$(cat "${dir}/e001.log")" "adapters/claude" "복구 경로가 실존 파일을 지목"; }
+
+  # (5) 없는 하네스 스킬 참조 → HRN-E005 차단
+  sed 's/skills: \[design-doc\]/skills: [desgin-doc]/' "${REPO_ROOT}/harness.config.yaml" > "${dir}/bad-ref.yaml"
+  "$vc" "${dir}/bad-ref.yaml" >"${dir}/e005.log" 2>&1 && \
+    fail_case "없는 스킬 참조 차단" "exit 0으로 통과함" || \
+    assert_contains "$(cat "${dir}/e005.log")" "HRN-E005" "없는 하네스 스킬 → HRN-E005"
+
+  # (6) superpowers 미설치는 비차단 — 기존 W014 계약 유지
+  #     (참조 문자열이 superpowers: 접두사면 파일 실존을 요구하지 않는다)
+  sed 's/skills: \[superpowers:brainstorming\]/skills: [superpowers:nonexistent-xyz]/' \
+    "${REPO_ROOT}/harness.config.yaml" > "${dir}/sp-ref.yaml"
+  if "$vc" "${dir}/sp-ref.yaml" >"${dir}/w014.log" 2>&1; then
+    pass_case "superpowers 미상 스킬은 비차단 (exit 0)"
+  else
+    fail_case "superpowers 미상 스킬 비차단" "차단됨 — W014 계약 위반"
+  fi
+
+  # (7) effort 미적용 사실을 보고에 노출
+  assert_contains "$(cat "${dir}/ok.log")" "effort" "요약이 effort 미지원 사실을 알린다"
+}
+
+# ============================================================================
 # 실행
 # ============================================================================
 test_rsync_contract
@@ -527,6 +614,8 @@ test_meta_corruption
 test_rsync_missing
 test_harness_cli_missing
 test_superpowers_prereq
+test_join_lines
+test_validate_config
 
 printf '\n=== 요약 ===\n'
 printf 'PASS: %d  FAIL: %d\n' "$PASS" "$FAIL"
