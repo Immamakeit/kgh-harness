@@ -622,6 +622,46 @@ test_validate_config() {
     "superpowers 미설치 → W014 출력"
   assert_contains "$(cat "${dir}/w014.real.log")" "미발견" \
     "미설치 경고 문구가 PRD §8 정의(미발견)와 일치"
+
+  # (10) 깨진 YAML → raw Traceback 금지, HRN-E004 래핑
+  printf 'active_harness: claude\ndefaults: model: sonnet\n  effort: x\n' > "${dir}/broken.yaml"
+  "$vc" "${dir}/broken.yaml" >"${dir}/broken.log" 2>&1
+  assert_not_contains "$(cat "${dir}/broken.log")" "Traceback" \
+    "깨진 YAML → 파이썬 Traceback 미노출"
+  assert_not_contains "$(cat "${dir}/broken.log")" "yaml.scanner" \
+    "깨진 YAML → 라이브러리 예외명 미노출"
+  assert_contains "$(cat "${dir}/broken.log")" "HRN-E004" \
+    "깨진 YAML → HRN-E004 로 래핑"
+  assert_contains "$(cat "${dir}/broken.log")" "행" \
+    "깨진 YAML → 오류 위치(행) 안내"
+
+  # (11) 최상위가 매핑이 아님 → HRN-E004
+  printf -- "- a\n- b\n" > "${dir}/notmap.yaml"
+  "$vc" "${dir}/notmap.yaml" >"${dir}/notmap.log" 2>&1
+  assert_not_contains "$(cat "${dir}/notmap.log")" "Traceback" "리스트 최상위 → Traceback 미노출"
+  assert_contains "$(cat "${dir}/notmap.log")" "HRN-E004" "리스트 최상위 → HRN-E004"
+
+  # (12) 빈 컨피그 → E004 만, 'None' 문자열 누출 금지
+  printf '{}\n' > "${dir}/empty.yaml"
+  "$vc" "${dir}/empty.yaml" >"${dir}/empty.log" 2>&1
+  assert_contains "$(cat "${dir}/empty.log")" "HRN-E004" "빈 컨피그 → 필수 키 누락 E004"
+  assert_not_contains "$(cat "${dir}/empty.log")" "'None'" \
+    "빈 컨피그 → 파이썬 None 문자열 미노출"
+  assert_not_contains "$(cat "${dir}/empty.log")" "adapters/None" \
+    "빈 컨피그 → None 이 경로에 섞이지 않음"
+
+  # (13) 스키마 손상 → HRN-E005 (배포물 문제)
+  #      검증기에 스키마 경로를 주입할 수단이 없으므로, 손상 스키마를 가진
+  #      소스 트리 복제본을 만들어 그쪽 validate-config 를 호출한다
+  local fakesrc="${dir}/fakesrc"
+  mkdir -p "${fakesrc}/config" "${fakesrc}/install" "${fakesrc}/adapters/claude" "${fakesrc}/skills"
+  cp "${REPO_ROOT}/install/validate-config" "${REPO_ROOT}/install/validate_config.py" \
+     "${REPO_ROOT}/install/lib.sh" "${fakesrc}/install/"
+  cp "${REPO_ROOT}/adapters/claude/capabilities.yaml" "${fakesrc}/adapters/claude/"
+  printf 'top_level: [broken\n' > "${fakesrc}/config/schema.yaml"
+  "${fakesrc}/install/validate-config" "${dir}/harness.config.yaml" >"${dir}/badschema.log" 2>&1
+  assert_not_contains "$(cat "${dir}/badschema.log")" "Traceback" "손상 스키마 → Traceback 미노출"
+  assert_contains "$(cat "${dir}/badschema.log")" "HRN-E005" "손상 스키마 → HRN-E005"
 }
 
 # ============================================================================

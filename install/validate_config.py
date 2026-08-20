@@ -16,9 +16,69 @@ def warn(code, msg, fix_a, fix_b):
                  f"   조치: (a) {fix_a}\n         (b) {fix_b}")
 
 
-def load(path):
-    with open(path, encoding="utf-8") as f:
-        return yaml.safe_load(f) or {}
+def load_config(path):
+    """사용자 컨피그. 파싱 실패는 HRN-E004."""
+    try:
+        with open(path, encoding="utf-8") as f:
+            data = yaml.safe_load(f)
+    except yaml.YAMLError as e:
+        mark = getattr(e, "problem_mark", None)
+        where = f" ({mark.line + 1}행 {mark.column + 1}열)" if mark else ""
+        reason = getattr(e, "problem", None) or str(e).splitlines()[0]
+        err("E004", f"컨피그 YAML 문법 오류{where}: {reason}",
+            f"{path} 의 해당 위치를 고치세요 (들여쓰기는 공백만 쓰고 탭을 섞지 마세요)",
+            "install/setup 으로 컨피그를 다시 생성하세요 (기존 파일은 미리 백업하세요)")
+        return None
+    except (OSError, UnicodeDecodeError) as e:
+        err("E004", f"컨피그를 읽을 수 없습니다: {e}",
+            f"{path} 의 권한과 인코딩(UTF-8)을 확인하세요",
+            "install/setup 으로 컨피그를 다시 생성하세요")
+        return None
+    if data is None:
+        data = {}
+    if not isinstance(data, dict):
+        err("E004", f"컨피그 최상위가 매핑이 아닙니다 (실제: {type(data).__name__})",
+            f"{path} 를 'key: value' 형태의 매핑으로 고치세요",
+            "install/setup 으로 컨피그를 다시 생성하세요")
+        return None
+    return data
+
+
+def load_harness_file(path, kind):
+    """스키마·어댑터 능력 파일. 손상은 배포물 문제이므로 HRN-E005."""
+    try:
+        with open(path, encoding="utf-8") as f:
+            data = yaml.safe_load(f) or {}
+    except (yaml.YAMLError, OSError, UnicodeDecodeError) as e:
+        err("E005", f"{kind} 파일이 손상되었습니다 ({path}): "
+                    f"{str(e).splitlines()[0]}",
+            "install/update 로 하네스 최신본을 다시 받으세요",
+            f"소스 레포에서 {path} 를 복원하세요")
+        return None
+    if not isinstance(data, dict):
+        err("E005", f"{kind} 파일의 최상위가 매핑이 아닙니다 ({path})",
+            "install/update 로 하네스 최신본을 다시 받으세요",
+            f"소스 레포에서 {path} 를 복원하세요")
+        return None
+    return data
+
+
+def finish():
+    """누적된 errors·warns 를 출력하고 요약을 낸 뒤 종료코드를 반환한다."""
+    for w in warns:
+        print(w)
+    for e in errors:
+        print(e)
+    print()
+    print("=== 검증 요약 ===")
+    print(f"검사 항목 : {checked}")
+    print(f"경고      : {len(warns)}")
+    print(f"오류      : {len(errors)}")
+    if errors:
+        print(f"{C_ERR}검증 실패 — 위 오류를 해결한 뒤 재실행하세요.{C_RST}")
+        return 1
+    print(f"{C_OK}검증 통과{C_RST}")
+    return 0
 
 
 def superpowers_state():
@@ -65,7 +125,10 @@ def check_type(val, spec, where):
 
 def main(config_path, schema_path, adapter_dir, source_dir):
     global checked
-    cfg, sch = load(config_path), load(schema_path)
+    cfg = load_config(config_path)
+    sch = load_harness_file(schema_path, "스키마")
+    if cfg is None or sch is None:
+        return finish()
 
     # ── ① 구조 ────────────────────────────────────────────────────────────
     top = sch.get("top_level", {})
@@ -108,18 +171,22 @@ def main(config_path, schema_path, adapter_dir, source_dir):
 
     # ── ② 값 (어댑터 위임) ────────────────────────────────────────────────
     active = cfg.get("active_harness")
-    caps_path = os.path.join(adapter_dir, str(active), "capabilities.yaml")
+    caps_path = None
     caps = None
-    if not os.path.isfile(caps_path):
-        err("E010", f"active_harness '{active}' 의 어댑터 능력 파일 미발견 ({caps_path})",
-            "active_harness 를 claude 로 변경하세요",
-            f"해당 어댑터를 구현하고 {caps_path} 를 추가하세요")
+    if active is None:
+        pass  # 필수 키 누락은 위 ① 구조 단계에서 이미 HRN-E004 로 보고됨 — None 을 경로에 넣지 않는다
     else:
-        caps = load(caps_path)
-        if not caps.get("implemented", False):
-            err("E010", f"active_harness '{active}' 는 아직 구현되지 않은 어댑터",
+        caps_path = os.path.join(adapter_dir, str(active), "capabilities.yaml")
+        if not os.path.isfile(caps_path):
+            err("E010", f"active_harness '{active}' 의 어댑터 능력 파일 미발견 ({caps_path})",
                 "active_harness 를 claude 로 변경하세요",
-                "해당 어댑터를 구현한 뒤 capabilities.yaml 의 implemented 를 true 로 바꾸세요")
+                f"해당 어댑터를 구현하고 {caps_path} 를 추가하세요")
+        else:
+            caps = load_harness_file(caps_path, "어댑터 능력")
+            if caps is not None and not caps.get("implemented", False):
+                err("E010", f"active_harness '{active}' 는 아직 구현되지 않은 어댑터",
+                    "active_harness 를 claude 로 변경하세요",
+                    "해당 어댑터를 구현한 뒤 capabilities.yaml 의 implemented 를 true 로 바꾸세요")
 
     if caps:
         models = caps.get("models", [])
@@ -187,20 +254,7 @@ def main(config_path, schema_path, adapter_dir, source_dir):
                  "확인 불가 상태로 진행 — 해당 구간에서 스킬 없이 동작할 수 있습니다")
 
     # ── 요약 (결과 비은닉) ────────────────────────────────────────────────
-    for w in warns:
-        print(w)
-    for e in errors:
-        print(e)
-    print()
-    print("=== 검증 요약 ===")
-    print(f"검사 항목 : {checked}")
-    print(f"경고      : {len(warns)}")
-    print(f"오류      : {len(errors)}")
-    if errors:
-        print(f"{C_ERR}검증 실패 — 위 오류를 해결한 뒤 재실행하세요.{C_RST}")
-        return 1
-    print(f"{C_OK}검증 통과{C_RST}")
-    return 0
+    return finish()
 
 
 if __name__ == "__main__":
