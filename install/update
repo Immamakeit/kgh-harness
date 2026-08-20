@@ -161,6 +161,24 @@ else
 fi
 echo
 
+# ---- 4b. 컨피그 검증 ---------------------------------------------------------
+
+CONFIG_VALID="미실행"
+if [ -x "${SCRIPT_DIR}/validate-config" ]; then
+  set +e
+  "${SCRIPT_DIR}/validate-config" "${TARGET_CONFIG}"
+  VC_RC=$?
+  set -e
+  case "$VC_RC" in
+    0) CONFIG_VALID="통과" ;;
+    2) CONFIG_VALID="건너뜀 (검증 전제 미충족 — 위 HRN-W015 참조)" ;;
+    *) CONFIG_VALID="실패 (위 오류 참조 — 업데이트는 완료됨)" ;;
+  esac
+else
+  CONFIG_VALID="건너뜀 (검증기 없음 — 소스가 오래됐을 수 있음)"
+fi
+echo
+
 # ---- 5. 종료 요약 ------------------------------------------------------------
 
 say "=== 업데이트 요약 ==="
@@ -172,5 +190,6 @@ if [ "${#NEW_KEYS[@]}" -gt 0 ]; then
 else
   say "새 설정 키: 없음"
 fi
+say "컨피그 검증: ${CONFIG_VALID}"
 echo
 ok "업데이트 완료 — 재세팅 없이 기존 워크플로를 바로 사용할 수 있습니다."

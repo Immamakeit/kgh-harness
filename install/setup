@@ -289,6 +289,24 @@ META_FILE="${HARNESS_DIR}/.meta"
 ok ".meta 기록: ${META_FILE}"
 echo
 
+# ---- 7b. 컨피그 검증 ---------------------------------------------------------
+
+CONFIG_VALID="미실행"
+if [ -x "${SCRIPT_DIR}/validate-config" ]; then
+  set +e
+  "${SCRIPT_DIR}/validate-config" "${TARGET_CONFIG}"
+  VC_RC=$?
+  set -e
+  case "$VC_RC" in
+    0) CONFIG_VALID="통과" ;;
+    2) CONFIG_VALID="건너뜀 (검증 전제 미충족 — 위 HRN-W015 참조)" ;;
+    *) CONFIG_VALID="실패 (위 오류 참조 — 설치는 완료됨)" ;;
+  esac
+else
+  CONFIG_VALID="건너뜀 (검증기 없음 — install/update로 최신본을 받으세요)"
+fi
+echo
+
 # ---- 8. 종료 요약 ------------------------------------------------------------
 
 say "=== 설치 요약 ==="
@@ -297,6 +315,7 @@ say "소스 커밋   : ${SOURCE_COMMIT}"
 say "컨피그      : ${CONFIG_STATUS} (${TARGET_CONFIG})"
 say "SessionStart 훅: ${HOOK_STATUS}"
 say "superpowers : ${SUPERPOWERS_STATUS}"
+say "컨피그 검증: ${CONFIG_VALID}"
 echo
 say "다음 할 일:"
 if [ "$CONFIG_CREATED" -eq 1 ] && [ -z "$VAULT_ROOT" ]; then
