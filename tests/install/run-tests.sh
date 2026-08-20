@@ -475,12 +475,7 @@ EOF
   target1="$(mktemp -d "${WORK}/sp-target1.XXXXXX")"
   out1="$(cd "$REPO_ROOT" && CLAUDE_CONFIG_DIR="$cfgdir1" ./install/setup "$target1" </dev/null 2>&1)"; rc1=$?
   assert_eq "$rc1" "0" "① superpowers 발견 — setup 정상 종료"
-  # T4(config-schema)부터는 validate-config가 harness.config.yaml의 superpowers: 참조를
-  # 구조적으로(실제 설치 여부와 무관하게) 항상 W014로 알린다 — 이는 setup 2c의 "실제
-  # 미설치" W014와 별개 경보이므로, 여기서는 2c 자신의 메시지("플러그인 미발견")만
-  # 부재를 확인한다. 코드 문자열 "HRN-W014" 자체는 이제 이 시나리오에서도 출력된다.
-  assert_not_contains "$out1" "superpowers 플러그인 미발견" \
-    "① superpowers 발견 — setup 자체(설치 미확인) W014 미출력"
+  assert_not_contains "$out1" "HRN-W014" "① superpowers 발견 — W014 미출력"
   assert_contains "$out1" "확인됨" "① 종료 요약에 '확인됨' 표기"
 
   # --- ② 매니페스트 있으나 superpowers 키 없음: 비차단·W014·영향 구간 4개 포함 ---
@@ -607,6 +602,26 @@ test_validate_config() {
 
   # (7) effort 미적용 사실을 보고에 노출
   assert_contains "$(cat "${dir}/ok.log")" "effort" "요약이 effort 미지원 사실을 알린다"
+
+  # (8) superpowers 설치 상태에서는 W014를 내지 않는다 (오발화 회귀 방지)
+  if [ -f "${CLAUDE_CONFIG_DIR:-$HOME/.claude}/plugins/installed_plugins.json" ] &&
+     grep -q 'superpowers@' "${CLAUDE_CONFIG_DIR:-$HOME/.claude}/plugins/installed_plugins.json" 2>/dev/null; then
+    assert_not_contains "$(cat "${dir}/ok.log")" "HRN-W014" \
+      "superpowers 설치됨 → W014 미출력 (오발화 회귀 방지)"
+    assert_contains "$(cat "${dir}/ok.log")" "superpowers v" \
+      "superpowers 설치됨 → 확인 메시지 출력"
+  else
+    pass_case "superpowers 미설치 환경 — 오발화 케이스 건너뜀"
+  fi
+
+  # (9) 미설치 환경 모사 — 빈 매니페스트 디렉토리를 CLAUDE_CONFIG_DIR로 주입
+  local fakecfg="${dir}/fakecfg"; mkdir -p "${fakecfg}/plugins"
+  printf '{"version":2,"plugins":{}}' > "${fakecfg}/plugins/installed_plugins.json"
+  CLAUDE_CONFIG_DIR="$fakecfg" "$vc" "${dir}/harness.config.yaml" >"${dir}/w014.real.log" 2>&1
+  assert_contains "$(cat "${dir}/w014.real.log")" "HRN-W014" \
+    "superpowers 미설치 → W014 출력"
+  assert_contains "$(cat "${dir}/w014.real.log")" "미발견" \
+    "미설치 경고 문구가 PRD §8 정의(미발견)와 일치"
 }
 
 # ============================================================================

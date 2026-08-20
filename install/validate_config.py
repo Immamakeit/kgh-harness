@@ -1,6 +1,6 @@
 #!/usr/bin/env python3
 """harness.config.yaml 3단계 검증. 종료코드 0=통과 1=차단."""
-import sys, os, yaml
+import sys, os, json, yaml
 
 C_ERR, C_WARN, C_OK, C_RST = "\033[31m", "\033[33m", "\033[32m", "\033[0m"
 errors, warns, checked = [], [], 0
@@ -19,6 +19,27 @@ def warn(code, msg, fix_a, fix_b):
 def load(path):
     with open(path, encoding="utf-8") as f:
         return yaml.safe_load(f) or {}
+
+
+def superpowers_state():
+    """('found', ver) | ('notfound', None) | ('unknown', 사유) — lib.sh detect_superpowers 와 동일 원천."""
+    base = os.environ.get("CLAUDE_CONFIG_DIR") or os.path.join(os.path.expanduser("~"), ".claude")
+    manifest = os.path.join(base, "plugins", "installed_plugins.json")
+    if not os.path.isfile(manifest):
+        return "unknown", manifest
+    try:
+        with open(manifest, encoding="utf-8") as f:
+            data = json.load(f)
+    except Exception:
+        return "unknown", manifest
+    plugins = data.get("plugins", {}) if isinstance(data, dict) else {}
+    if not isinstance(plugins, dict):
+        return "unknown", manifest
+    for k, v in plugins.items():
+        if isinstance(k, str) and k.startswith("superpowers@"):
+            ver = v.get("version", "unknown") if isinstance(v, dict) else "unknown"
+            return "found", ver
+    return "notfound", manifest
 
 
 def check_type(val, spec, where):
@@ -137,21 +158,33 @@ def main(config_path, schema_path, adapter_dir, source_dir):
                       f"지원되지 않아 무시됩니다 — 지정된 곳: {', '.join(used)}{C_RST}")
 
     # ── ③ 참조 실존 ───────────────────────────────────────────────────────
+    sp_refs = []   # (구간, 스킬명) — 루프에서 수집만 한다
     for name, body in (cfg.get("stages") or {}).items():
         for s in ((body or {}).get("skills") or []):
             checked += 1
             if str(s).startswith("superpowers:"):
-                sp = str(s).split(":", 1)[1]
-                warn("W014", f"stages.{name}: superpowers 스킬 '{sp}' 는 "
-                             "전역 설치 전제 — 미설치 시 해당 구간만 스킬 없이 진행",
-                     "/plugin install superpowers 로 설치하세요",
-                     f"쓰지 않는다면 stages.{name}.skills 에서 제거하세요")
+                sp_refs.append((name, str(s).split(":", 1)[1]))
                 continue
             path = os.path.join(source_dir, "skills", str(s), "SKILL.md")
             if not os.path.isfile(path):
                 err("E005", f"stages.{name}: 스킬 '{s}' 의 파일 미발견 ({path})",
                     f"stages.{name}.skills 의 스킬명 철자를 고치세요",
                     f"의도한 스킬이라면 skills/{s}/SKILL.md 를 만드세요")
+
+    # 루프 밖: superpowers 설치 상태를 한 번만 판정해 한 번만 보고한다
+    if sp_refs:
+        state, info = superpowers_state()
+        where = ", ".join(f"{n}:{s}" for n, s in sp_refs)
+        if state == "found":
+            print(f"{C_OK}✓ superpowers v{info} 확인 — 사용 구간: {where}{C_RST}")
+        elif state == "notfound":
+            warn("W014", f"superpowers 플러그인 미발견 — 영향 구간: {where}",
+                 "/plugin marketplace add obra/superpowers-marketplace 후 /plugin install superpowers",
+                 "쓰지 않는다면 해당 구간의 skills[] 에서 superpowers: 항목을 제거하세요")
+        else:
+            warn("W014", f"superpowers 설치 여부 확인 불가 ({info}) — 영향 구간: {where}",
+                 "플러그인 매니페스트를 확인하거나 /plugin install superpowers 를 실행하세요",
+                 "확인 불가 상태로 진행 — 해당 구간에서 스킬 없이 동작할 수 있습니다")
 
     # ── 요약 (결과 비은닉) ────────────────────────────────────────────────
     for w in warns:
