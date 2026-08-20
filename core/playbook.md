@@ -18,8 +18,13 @@
 1. 프로젝트 루트의 `harness.config.yaml`을 **매 흐름 시작 시 다시 읽는다.** 캐시 금지.
 2. 구간 설정은 `stages.<구간>` → 없는 키는 `defaults` 상속.
 3. **검증 (silent 금지):**
-   - `model` 값이 Claude 어댑터 지원 목록(opus, sonnet, haiku, fable)에 없으면:
-     `❌ HRN-E001 — 알 수 없는 model '<값>'. 지원: [opus, sonnet, haiku, fable]. 조치: (a) 컨피그 값 재입력 (b) 어댑터(adapters/claude/) 수정` 보고 후 해당 구간 진행 중단.
+   - **검증은 직접 하지 않는다.** `.harness/install/validate-config` 를 실행하고 종료코드를 따른다:
+     `0` 통과(출력의 경고는 그대로 사용자에게 전달) · `1` 차단 — 출력된 HRN 코드와 복구
+     경로를 그대로 보고하고 해당 구간 진행 중단 · `2` 검증 불가(비차단) — 출력된
+     `HRN-W015` 를 한 줄 보고하고 흐름은 계속한다.
+     검증기가 없으면 `HRN-E005` 를 보고하고 `install/update` 를 안내한다.
+     지원 모델 목록은 `adapters/<active_harness>/capabilities.yaml` 이 소유한다 —
+     이 문서에 목록을 다시 적지 않는다.
    - `effort`는 Claude 어댑터의 Agent 디스패치에서 **현재 미지원** — 무시하되 흐름 시작
      보고에 그 사실을 한 줄 명시한다. (Workflow 오케스트레이션 사용 시에만 적용 가능)
    - 컨피그 파일 형식이 깨졌으면 `HRN-E004` 형식으로 보고.
