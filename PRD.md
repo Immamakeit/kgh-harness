@@ -76,7 +76,7 @@ harness.config.yaml (단일 진실원, YAML, 런타임 read)
 kgh-dev-harness/
 ├─ PRD.md                     # 이 문서
 ├─ harness.config.yaml        # 템플릿 컨피그 (설치 시 프로젝트별 인스턴스 생성)
-├─ config/                    # 스키마 + 디폴트값
+├─ config/                    # 스키마 단일 진실원 (schema.yaml)
 ├─ core/                      # 하네스 무관: loader·resolver·orchestrator 지침
 ├─ adapters/
 │  ├─ claude/                 # v1
@@ -128,41 +128,12 @@ vault `workflow.md` 2장(9단계)을 실행한다. 게이트 구성:
 
 ## 7. 컨피그 스키마 (`harness.config.yaml`)
 
-```yaml
-active_harness: claude          # claude | codex | [claude, codex]
-defaults:                        # 구간 미지정 시 상속
-  model: sonnet
-  effort: medium
-storage:
-  enabled: true
-  tool: obsidian-cli
-  vault_root: null               # ★ 디폴트 없음 — 반드시 사용자 지정 (§7.1)
-  path_template: "<category>/<project>/_work/<task>/<YYYY-MM-DD>"
-  docs: [설계, 구현계획, 구현후보고]
-  approval: auto                 # auto | required(저장 직전 확인)
-stages:
-  entry_gate:
-    enabled: conditional         # 판단형 요청일 때만
-    skills: [cost-bottleneck-check]
-  design:
-    model: opus
-    effort: high
-    skills: [brainstorming, design-doc]
-    gate: required
-  plan:
-    skills: [scope-splitter, writing-plans]
-    gate: auto                   # optional로 바꾸면 승인 대기
-  implement:
-    model: sonnet
-    skills: [test-driven-development]
-  verify:
-    skills: [requesting-code-review]
-    loop: auto
-  report:
-    skills: [report-doc]
-  judgment:
-    gate: required
-```
+스키마의 단일 진실원은 **`config/schema.yaml`** 이다 — 키·타입·허용값·필수여부·기본값을
+그 파일이 정의한다. 이 문서에 예시를 중복 기재하지 않는다(드리프트 방지).
+
+허용값 중 **model·effort 는 어댑터 소유**다: `adapters/<active_harness>/capabilities.yaml`.
+검증은 `install/validate-config` 가 ① 구조 → ② 값(어댑터 위임) → ③ 참조 실존 순으로
+수행한다.
 
 ### 7.1 저장 규칙 (`storage`)
 
@@ -197,6 +168,7 @@ Claude/Codex의 모델명·규격은 변할 수 있다. 흐름 시작 시 Resolv
 | `HRN-W012` | 프로젝트에 harness.config.yaml 없음 (경고, 비차단 — 플레이북 기본값으로 진행) | install/setup으로 컨피그 생성 |
 | `HRN-W013` | setup 시 하네스 실행체 미발견 (경고, 비차단) | CLI 설치 후 사용 |
 | `HRN-W014` | superpowers 플러그인 미발견 (경고, 비차단) | 플러그인 설치 또는 컨피그에서 제거 |
+| `HRN-W015` | 검증 전제(python3·PyYAML) 미충족으로 컨피그 검증 건너뜀 (경고, 비차단) | python3/PyYAML 설치 후 재실행 |
 
 raw 에러 노출 금지 — 항상 위 형식으로 래핑한다. (vault `script-standards.md` 준수)
 
