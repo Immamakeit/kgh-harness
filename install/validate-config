@@ -1,0 +1,53 @@
+#!/usr/bin/env bash
+# install/validate-config [컨피그경로] — harness.config.yaml 3단계 검증.
+# ① 구조(HRN-E004) ② 값/어댑터 위임(HRN-E001·E002) ③ 참조 실존(HRN-E005·W014)
+# 검증 전제 미충족 시 HRN-W015 + exit 2 (비차단).
+set -euo pipefail
+
+SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+SOURCE_DIR="$(cd "${SCRIPT_DIR}/.." && pwd)"
+# shellcheck source=./lib.sh
+source "${SCRIPT_DIR}/lib.sh"
+
+CONFIG="${1:-$(pwd)/harness.config.yaml}"
+SCHEMA="${SOURCE_DIR}/config/schema.yaml"
+ADAPTER_DIR="${SOURCE_DIR}/adapters"
+
+if [ ! -f "$CONFIG" ]; then
+  hrn_warn "W012" "컨피그 미발견: ${CONFIG}" \
+    "install/setup 으로 harness.config.yaml 을 생성하세요" \
+    "검증 없이 진행 — 플레이북 기본값이 적용됩니다"
+  exit 2
+fi
+
+if [ ! -f "$SCHEMA" ]; then
+  hrn_err "E005" "스키마 미발견: ${SCHEMA}" \
+    "install/update 로 하네스 최신본을 받으세요" \
+    "소스 레포에서 config/schema.yaml 을 복원하세요"
+  exit 1
+fi
+
+if ! command -v python3 >/dev/null 2>&1; then
+  hrn_warn "W015" "python3 미발견으로 컨피그 검증을 건너뜁니다" \
+    "python3 설치 후 install/validate-config 를 재실행하세요" \
+    "검증 없이 진행 — 오타는 해당 구간 도달 시 드러납니다"
+  exit 2
+fi
+
+if ! python3 -c 'import yaml' >/dev/null 2>&1; then
+  hrn_warn "W015" "PyYAML 미발견으로 컨피그 검증을 건너뜁니다" \
+    "pip install pyyaml 후 install/validate-config 를 재실행하세요" \
+    "검증 없이 진행 — 오타는 해당 구간 도달 시 드러납니다"
+  exit 2
+fi
+
+say "=== 컨피그 검증 ==="
+say "대상  : ${CONFIG}"
+say "스키마: ${SCHEMA}"
+echo
+
+set +e
+python3 "${SCRIPT_DIR}/validate_config.py" "$CONFIG" "$SCHEMA" "$ADAPTER_DIR" "$SOURCE_DIR"
+rc=$?
+set -e
+exit "$rc"
