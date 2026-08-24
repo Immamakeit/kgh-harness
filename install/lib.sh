@@ -76,6 +76,13 @@ ask_choice() {
     return 0
   fi
 
+  # 기본번호 검증 — 호출부 실수를 조용히 통과시키지 않는다.
+  if ! printf '%s' "$default" | grep -qE '^[0-9]+$' || \
+     [ "$default" -lt 1 ] || [ "$default" -gt "$n" ]; then
+    warn "ask_choice: 기본번호 '${default}' 가 1~${n} 범위 밖입니다 — 1로 보정합니다."
+    default=1
+  fi
+
   if [ ! -t 0 ]; then
     note "(비대화형) ${prompt} → 기본 선택 적용: ${default}) ${opts[$((default - 1))]:-}"
     printf '%s\n' "$default"
@@ -91,7 +98,11 @@ ask_choice() {
         printf '  %d) %s\n' "$((i + 1))" "${opts[$i]}" >&2
       fi
     done
-    read -rp "번호 입력 [${default}]: " ans
+    if ! read -rp "번호 입력 [${default}]: " ans; then
+      note "(입력 종료) 기본값 ${default} 을(를) 적용합니다."
+      printf '%s\n' "$default"
+      return 0
+    fi
     ans="${ans:-$default}"
 
     if printf '%s' "$ans" | grep -qE '^[0-9]+$' && [ "$ans" -ge 1 ] && [ "$ans" -le "$n" ]; then

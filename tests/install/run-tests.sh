@@ -719,6 +719,26 @@ test_ask_choice() {
   # (7) 선택지 0개 → 기본값 (호출부 실수 방어)
   captured="$(bash -c "source ${lib}; ask_choice '고르세요' 1" </dev/null 2>/dev/null)"
   assert_eq "$captured" "1" "선택지 0개 → 기본값 반환 (크래시 없음)"
+
+  # (8) 범위 밖 기본번호 → 1로 보정 + 경고 (호출부 실수 방어)
+  out="$(bash -c "source ${lib}; ask_choice '고르세요' 99 '가' '나' '다'" </dev/null 2>&1)"
+  assert_contains "$out" "범위 밖" "범위 밖 기본번호를 알린다"
+  captured="$(bash -c "source ${lib}; ask_choice '고르세요' 99 '가' '나' '다'" </dev/null 2>/dev/null)"
+  assert_eq "$captured" "1" "범위 밖 기본번호 → 1로 보정된 값 반환"
+
+  # (9) 비숫자 기본번호도 보정
+  captured="$(bash -c "source ${lib}; ask_choice '고르세요' abc '가' '나'" </dev/null 2>/dev/null)"
+  assert_eq "$captured" "1" "비숫자 기본번호 → 1로 보정"
+
+  # (10) ★ 입력 고갈 시 무한 대기하지 않는다 (pty, 입력 1줄뿐)
+  local rc
+  timeout 8 bash -c "printf '\n' | script -qec \"bash -c 'source ${lib}; ask_choice 고르세요 99 가 나 다'\" /dev/null" >/dev/null 2>&1
+  rc=$?
+  if [ "$rc" -eq 124 ]; then
+    fail_case "입력 고갈 시 무한 대기 안 함" "timeout 8초 초과 — 무한 대기 중"
+  else
+    pass_case "입력 고갈 시 무한 대기 안 함 (rc=${rc})"
+  fi
 }
 
 test_detect_obsidian_vaults() {
