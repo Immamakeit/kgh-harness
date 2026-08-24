@@ -56,6 +56,59 @@ ask_yn() {
   esac
 }
 
+# ask_choice "질문 문구" "기본번호" "선택지1" "선택지2" ...
+#   → 선택된 번호(1-based)를 stdout으로 echo
+#
+# 라벨이 아니라 번호를 반환한다 — 호출부가 자기 배열을 인덱싱하게 해서
+# 표시 문자열과 값이 엉키지 않게 한다.
+#
+# ⚠ stdout은 $(...)로 캡처된다. 목록·안내는 전부 stderr로 나간다.
+#   (위 note() 주석 참조 — 같은 함정이다)
+ask_choice() {
+  local prompt="$1" default="$2"
+  shift 2
+  local -a opts=("$@")
+  local n=${#opts[@]} i ans tries=0
+
+  if [ "$n" -eq 0 ]; then
+    note "(선택지 없음) ${prompt} → 기본값 적용: ${default}"
+    printf '%s\n' "$default"
+    return 0
+  fi
+
+  if [ ! -t 0 ]; then
+    note "(비대화형) ${prompt} → 기본 선택 적용: ${default}) ${opts[$((default - 1))]:-}"
+    printf '%s\n' "$default"
+    return 0
+  fi
+
+  while :; do
+    printf '%s\n' "$prompt" >&2
+    for ((i = 0; i < n; i++)); do
+      if [ "$((i + 1))" = "$default" ]; then
+        printf '  %d) %s   [기본]\n' "$((i + 1))" "${opts[$i]}" >&2
+      else
+        printf '  %d) %s\n' "$((i + 1))" "${opts[$i]}" >&2
+      fi
+    done
+    read -rp "번호 입력 [${default}]: " ans
+    ans="${ans:-$default}"
+
+    if printf '%s' "$ans" | grep -qE '^[0-9]+$' && [ "$ans" -ge 1 ] && [ "$ans" -le "$n" ]; then
+      printf '%s\n' "$ans"
+      return 0
+    fi
+
+    tries=$((tries + 1))
+    if [ "$tries" -ge 3 ]; then
+      warn "입력을 3회 인식하지 못했습니다 — 기본값 ${default}을(를) 적용합니다."
+      printf '%s\n' "$default"
+      return 0
+    fi
+    warn "1~${n} 사이의 번호를 입력하세요 (입력값: '${ans}')"
+  done
+}
+
 # ---- 문자열 유틸 ------------------------------------------------------------
 
 # join_lines <구분자>  — stdin의 줄들을 <구분자>로 이어붙여 stdout에 낸다(개행 없음).
