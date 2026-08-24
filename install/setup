@@ -175,7 +175,35 @@ echo
 
 VAULT_ROOT=""
 if [ "$CONFIG_CREATED" -eq 1 ]; then
-  VAULT_ROOT="$(ask "storage.vault_root (Obsidian vault 절대경로) — 건너뛰려면 Enter" "")"
+  # vault 탐지 → 번호 선택. 탐지 실패 시 기존 자유 입력으로 열화한다(설계 §3-5).
+  VAULT_LINES="$(detect_obsidian_vaults)"
+
+  if [ -n "$VAULT_LINES" ]; then
+    VAULT_PATHS=()
+    VAULT_OPTS=()
+    while IFS="$(printf '\t')" read -r _vname _vpath; do
+      [ -n "$_vpath" ] || continue
+      VAULT_PATHS+=("$_vpath")
+      VAULT_OPTS+=("$(printf '%-14s %s' "$_vname" "$_vpath")")
+    done <<< "$VAULT_LINES"
+
+    say "Obsidian 등록 vault ${#VAULT_PATHS[@]}개를 찾았습니다."
+    VAULT_OPTS+=("직접 경로 입력")
+    VAULT_OPTS+=("건너뛰기 (나중에 harness.config.yaml 에서 지정)")
+
+    VAULT_N=${#VAULT_OPTS[@]}
+    VAULT_PICK="$(ask_choice "storage.vault_root 를 지정하시겠습니까?" "$VAULT_N" "${VAULT_OPTS[@]}")"
+
+    if [ "$VAULT_PICK" -le "${#VAULT_PATHS[@]}" ]; then
+      VAULT_ROOT="${VAULT_PATHS[$((VAULT_PICK - 1))]}"
+    elif [ "$VAULT_PICK" -eq "$((VAULT_N - 1))" ]; then
+      VAULT_ROOT="$(ask "vault 절대경로를 입력하세요 — 건너뛰려면 Enter" "")"
+    else
+      VAULT_ROOT=""
+    fi
+  else
+    VAULT_ROOT="$(ask "storage.vault_root (Obsidian vault 절대경로) — 건너뛰려면 Enter" "")"
+  fi
   if [ -n "$VAULT_ROOT" ]; then
     if [ "$HAVE_PYTHON3" -eq 1 ]; then
       if python3 - "$TARGET_CONFIG" "$VAULT_ROOT" <<'PYEOF'
