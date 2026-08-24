@@ -130,6 +130,7 @@ EOF
   cat > "$dir/.harnessignore" <<'EOF'
 PRD.md
 CLAUDE.md
+/harness.config.yaml
 .git/
 .gitignore
 tests/
@@ -138,7 +139,9 @@ tests/
 .claude/
 EOF
 
-  cat > "$dir/harness.config.yaml" <<'EOF'
+  # 배포 템플릿 — 대상 컨피그는 반드시 이것으로부터 생성돼야 한다.
+  mkdir -p "$dir/config"
+  cat > "$dir/config/harness.config.template.yaml" <<'EOF'
 active_harness: claude
 defaults:
   model: sonnet
@@ -148,6 +151,16 @@ workdocs:
 storage:
   enabled: true
   vault_root: null
+EOF
+
+  # 소스 레포 자신의 실사용 컨피그 — 개인 경로가 박혀 있고 배포에서 제외돼야 한다.
+  cat > "$dir/harness.config.yaml" <<'EOF'
+active_harness: claude
+defaults:
+  model: sonnet
+storage:
+  enabled: true
+  vault_root: "/SOURCE-PRIVATE/vault"
 EOF
 
   echo "dummy adapter" > "$dir/adapters/marker.txt"
@@ -341,7 +354,7 @@ test_update_contract() {
 
   # 소스 변형: 파일 삭제 + 새 컨피그 키 추가 + 새 커밋
   rm -f "${src}/adapters/marker.txt"
-  printf '\nnew_feature_key: true\n' >> "${src}/harness.config.yaml"
+  printf '\nnew_feature_key: true\n' >> "${src}/config/harness.config.template.yaml"
   git -C "$src" -c user.email=test@test.local -c user.name=test add -A
   git -C "$src" -c user.email=test@test.local -c user.name=test commit -q -m "bump: remove marker, add config key"
 

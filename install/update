@@ -139,7 +139,7 @@ echo
 # ---- 4. 컨피그 스키마 diff (안내만, 자동 추가 금지) --------------------------
 
 TARGET_CONFIG="${TARGET_DIR}/harness.config.yaml"
-TEMPLATE_CONFIG="${HARNESS_DIR}/harness.config.yaml"
+TEMPLATE_CONFIG="${HARNESS_DIR}/config/harness.config.template.yaml"
 NEW_KEYS=()
 
 if [ -f "$TARGET_CONFIG" ]; then

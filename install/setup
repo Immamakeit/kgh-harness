@@ -31,6 +31,13 @@ if [ ! -f "${SOURCE_DIR}/.harnessignore" ]; then
   exit 1
 fi
 
+if [ ! -f "${SOURCE_DIR}/config/harness.config.template.yaml" ]; then
+  hrn_err "E005" "템플릿 컨피그 미발견 — config/harness.config.template.yaml (${SOURCE_DIR})" \
+    "하네스 소스 레포 루트에서 install/setup을 실행하세요 (git clone https://github.com/Immamakeit/kgh-harness.git)" \
+    "git checkout으로 config/harness.config.template.yaml을 복원하세요"
+  exit 1
+fi
+
 if ! command -v rsync >/dev/null 2>&1; then
   hrn_err "E008" "필수 실행체 rsync를 찾을 수 없습니다 (B1: cp 폴백 제거 — rsync 필수)" \
     "rsync를 설치하세요 (Debian/Ubuntu: sudo apt install rsync, macOS: brew install rsync)" \
@@ -84,7 +91,7 @@ echo
 # 템플릿 컨피그 값을 active_harness로 본다. 미발견이어도 설치 자체는 막지 않는다
 # (비차단 경고 W013 — 흐름 시작 시점의 차단(E008/E010)은 플레이북 §1 소관).
 CONFIG_FOR_L1="${TARGET_DIR}/harness.config.yaml"
-[ -f "$CONFIG_FOR_L1" ] || CONFIG_FOR_L1="${SOURCE_DIR}/harness.config.yaml"
+[ -f "$CONFIG_FOR_L1" ] || CONFIG_FOR_L1="${SOURCE_DIR}/config/harness.config.template.yaml"
 ACTIVE_HARNESS_L1="$(read_active_harness "$CONFIG_FOR_L1")"
 HARNESS_BIN_L1="$(harness_executable_for "$ACTIVE_HARNESS_L1")"
 if [ -n "$HARNESS_BIN_L1" ]; then
@@ -150,7 +157,7 @@ echo
 # ---- 4. 컨피그 --------------------------------------------------------------
 
 TARGET_CONFIG="${TARGET_DIR}/harness.config.yaml"
-TEMPLATE_CONFIG="${HARNESS_DIR}/harness.config.yaml"
+TEMPLATE_CONFIG="${HARNESS_DIR}/config/harness.config.template.yaml"
 CONFIG_CREATED=0
 CONFIG_STATUS=""
 
@@ -159,8 +166,8 @@ if [ -f "$TARGET_CONFIG" ]; then
   say "harness.config.yaml 이미 존재 — 기존 설정을 그대로 유지합니다: ${TARGET_CONFIG}"
 else
   if [ ! -f "$TEMPLATE_CONFIG" ]; then
-    hrn_err "E005" "템플릿 컨피그 미발견 (${TEMPLATE_CONFIG})" \
-      "소스 레포 무결성 확인 후 재실행" \
+    hrn_err "E005" "배포물에 템플릿 컨피그가 없습니다 (${TEMPLATE_CONFIG})" \
+      "소스 레포에 config/harness.config.template.yaml이 있는지 확인 후 재실행" \
       "install/update 또는 재설치로 소스를 갱신 후 재시도"
     exit 1
   fi
@@ -214,8 +221,10 @@ path, value = sys.argv[1], sys.argv[2]
 with open(path, encoding="utf-8") as f:
     text = f.read()
 
+# 값이 null이든 이미 박힌 문자열이든 통째로 교체한다(주석은 보존).
+# null에만 매치하던 이전 버전은 템플릿이 오염되면 사용자의 선택을 조용히 버렸다.
 new_text, n = re.subn(
-    r'^(\s*vault_root:\s*)null(\s*#.*)?$',
+    r'^(\s*vault_root:\s*)(?:"[^"]*"|\'[^\']*\'|[^\s#]+)(\s*#.*)?$',
     lambda m: f'{m.group(1)}"{value}"' + (m.group(2) or ""),
     text,
     count=1,
