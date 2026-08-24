@@ -65,7 +65,7 @@ ask_yn() {
 # F1/F2). 그래서 paste -d 대신 순수 셸 루프로 이어붙인다.
 join_lines() {
   local sep="$1" first=1 line out=""
-  while IFS= read -r line; do
+  while IFS= read -r line || [ -n "$line" ]; do
     if [ "$first" -eq 1 ]; then
       out="$line"
       first=0
