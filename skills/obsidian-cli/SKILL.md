@@ -30,7 +30,10 @@ description: Use when saving harness output documents (설계/구현계획/구�
 
 ## 문서 규칙
 
-- 템플릿: `<vault_root>/harness/templates/`의 설계·구현계획·구현후보고 3종을 사용한다.
+- 템플릿: 설계·구현계획·구현후보고 3종. **탐색 순서를 지킨다** —
+  ① `<vault_root>/harness/templates/` (vault가 원본이므로 있으면 무조건 이것)
+  ② 없으면 하네스에 동봉된 `templates/` (설치본 기준 `<프로젝트>/.harness/templates/`,
+     소스 레포 기준 `templates/`). 둘 다 없으면 서식을 창작하지 말고 그 사실을 보고한다.
 - frontmatter의 `project` · `task` · `date` 채움. `status`는 **소유 스킬이 정의한
   수명주기의 최종 상태**로 갱신한다 (값을 창작하지 않는다 — 정의처는 각 소유 스킬):
 
