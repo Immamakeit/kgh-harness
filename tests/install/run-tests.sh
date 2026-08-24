@@ -783,6 +783,83 @@ test_detect_obsidian_vaults() {
   fi
 }
 
+
+# ============================================================================
+# 12. 공개 배포 계약 — 클론본이 남의 프로젝트에 깨끗하게 깔리는가
+# ============================================================================
+test_public_distribution() {
+  group "공개 배포 계약"
+
+  local tmpl="${REPO_ROOT}/config/harness.config.template.yaml"
+
+  # (1) 배포 템플릿은 vault_root가 비어 있어야 한다 — 개발자 개인 경로 유출 차단
+  assert_present "$tmpl" "배포 템플릿 실존 (config/harness.config.template.yaml)"
+  assert_contains "$(grep -E '^\s*vault_root:' "$tmpl")" "null" \
+    "배포 템플릿의 vault_root는 null"
+
+  # (2) 소스의 실사용 컨피그는 배포물에 들어가지 않는다
+  local t1
+  t1="$(mktemp -d "${WORK}/pub-t1.XXXXXX")"
+  ( cd "$REPO_ROOT" && ./install/setup "$t1" </dev/null >/dev/null 2>&1 )
+  assert_absent "${t1}/.harness/harness.config.yaml" \
+    "배포물에 소스의 실사용 컨피그 부재"
+  assert_present "${t1}/.harness/config/harness.config.template.yaml" \
+    "배포물에 템플릿 컨피그 존재"
+  assert_present "${t1}/.harness/templates/설계.md" \
+    "배포물에 문서 서식 폴백(templates/) 존재"
+
+  # (3) 새 대상 컨피그에 소스의 개인 vault 경로가 스며들지 않는다
+  local src_vault
+  src_vault="$(grep -E '^\s*vault_root:' "${REPO_ROOT}/harness.config.yaml" | sed 's/.*vault_root:[[:space:]]*//; s/[[:space:]]*#.*//; s/"//g')"
+  if [ -n "$src_vault" ] && [ "$src_vault" != "null" ]; then
+    assert_not_contains "$(cat "${t1}/harness.config.yaml")" "$src_vault" \
+      "새 대상 컨피그에 소스의 vault_root 미유입"
+  else
+    pass_case "새 대상 컨피그에 소스의 vault_root 미유입 (소스 vault_root가 비어 검사 생략)"
+  fi
+
+  # (4) 값이 박힌 템플릿이어도 사용자가 고른 값이 이긴다 (치환 정규식 회귀)
+  local src2 t2
+  src2="$(mktemp -d "${WORK}/pub-src2.XXXXXX")"
+  build_fake_source "$src2"
+  sed -i 's|^  vault_root: null|  vault_root: "/OLD/PRIVATE/vault"   # 오염된 템플릿|' \
+    "${src2}/config/harness.config.template.yaml"
+  t2="$(mktemp -d "${WORK}/pub-t2.XXXXXX")"
+  # vault 자동탐지를 끈 PATH로 돌린다(wslpath 부재 → 탐지 빈 출력 → 자유 입력 경로).
+  # 그래야 입력 순서가 환경과 무관하게 "설치확인 Enter → vault 경로" 로 고정된다.
+  local mp2
+  mp2="$(build_min_path pub2)"
+  run_with_tty '\n/NEW/vault\n' "export PATH=${mp2}; cd ${src2}; ./install/setup ${t2}" >/dev/null 2>&1
+  local cfg2
+  cfg2="$(cat "${t2}/harness.config.yaml" 2>/dev/null || echo "")"
+  assert_contains "$cfg2" "/NEW/vault" "오염된 템플릿에도 사용자 입력 vault_root 반영"
+  assert_not_contains "$cfg2" "/OLD/PRIVATE/vault" "오염된 템플릿 값이 대상에 남지 않음"
+
+  # (5) 자기 자신(소스 레포)에 설치하려 하면 차단된다
+  local out rc
+  out="$(cd "$REPO_ROOT" && ./install/setup "$REPO_ROOT" </dev/null 2>&1)"; rc=$?
+  assert_eq "$rc" "1" "소스 자신을 대상으로 지정 → 차단(rc=1)"
+  assert_contains "$out" "HRN-E007" "차단 사유를 HRN-E007로 안내"
+  assert_absent "${REPO_ROOT}/.harness/core" "차단 시 소스 트리에 배포물 미생성"
+
+  # (6) 인자 없이 비대화형 실행해도 소스에 설치되지 않는다
+  local out6 rc6
+  out6="$(cd "$REPO_ROOT" && ./install/setup </dev/null 2>&1)"; rc6=$?
+  assert_eq "$rc6" "1" "인자 없는 비대화형 실행 → 차단(rc=1)"
+
+  # (7) --help 는 설치를 수행하지 않고 사용법만 낸다
+  local out7 rc7
+  out7="$(cd "$REPO_ROOT" && ./install/setup --help </dev/null 2>&1)"; rc7=$?
+  assert_eq "$rc7" "0" "--help 정상 종료"
+  assert_contains "$out7" "install/setup <대상 프로젝트 경로>" "--help 에 사용법 표기"
+
+  # (8) 공개 저장소 필수 파일
+  assert_present "${REPO_ROOT}/README.md" "README.md 존재"
+  assert_present "${REPO_ROOT}/LICENSE" "LICENSE 존재"
+  assert_contains "$(cat "${REPO_ROOT}/README.md")" "install/setup /absolute/path/to/project" \
+    "README에 에이전트용 설치 명령 존재"
+}
+
 # ============================================================================
 # 실행
 # ============================================================================
@@ -797,6 +874,7 @@ test_join_lines
 test_validate_config
 test_ask_choice
 test_detect_obsidian_vaults
+test_public_distribution
 
 printf '\n=== 요약 ===\n'
 printf 'PASS: %d  FAIL: %d\n' "$PASS" "$FAIL"
