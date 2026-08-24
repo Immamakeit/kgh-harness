@@ -78,6 +78,16 @@ if [ ! -w "$TARGET_DIR" ]; then
   exit 1
 fi
 
+# 자기 자신(또는 소스 트리 내부)에 설치 금지 — harness_copy는 rsync --delete로
+# 대상을 소스에 맞춰 정리하므로, 대상이 소스 안이면 소스 트리를 스스로 훼손한다.
+# 비TTY에서 인자 없이 실행하면 대상 디폴트가 현재 경로(=소스 레포)라 특히 걸리기 쉽다.
+if [ "$TARGET_DIR" = "$SOURCE_DIR" ] || case "$TARGET_DIR" in "${SOURCE_DIR}/"*) true ;; *) false ;; esac; then
+  hrn_err "E007" "대상이 하네스 소스 레포 자신(또는 그 하위)입니다: ${TARGET_DIR}" \
+    "설치할 프로젝트 경로를 인자로 지정하세요: ${SCRIPT_DIR}/setup /path/to/project" \
+    "자기 자신에 설치(도그푸딩)는 아직 지원하지 않습니다 — 소스 레포 밖의 경로를 쓰세요"
+  exit 1
+fi
+
 say "대상 경로: ${TARGET_DIR}"
 CONFIRM="$(ask_yn "이 경로에 설치를 진행할까요?" "Y")"
 if [ "$CONFIRM" != "Y" ]; then
