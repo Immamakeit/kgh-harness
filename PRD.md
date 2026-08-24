@@ -73,10 +73,13 @@ harness.config.yaml (단일 진실원, YAML, 런타임 read)
 ## 5. 레포 구조
 
 ```
-kgh-dev-harness/
+kgh-dev-harness/                (공개 원격: kgh-harness)
 ├─ PRD.md                     # 이 문서
-├─ harness.config.yaml        # 템플릿 컨피그 (설치 시 프로젝트별 인스턴스 생성)
+├─ README.md                  # 공개용 설치·사용 안내 (사람 + 에이전트)
+├─ LICENSE                    # MIT
+├─ harness.config.yaml        # ★ 이 레포 자신의 실사용 컨피그 — 배포 제외
 ├─ config/                    # 스키마 단일 진실원 (schema.yaml)
+│  └─ harness.config.template.yaml   # ★ 배포 템플릿 (vault_root: null) — 대상 컨피그의 원본
 ├─ core/                      # 하네스 무관: loader·resolver·orchestrator 지침
 ├─ adapters/
 │  ├─ claude/                 # v1
@@ -94,12 +97,18 @@ kgh-dev-harness/
 git에는 커밋하되, `install/setup`·`install/update`가 대상 프로젝트로 복사할 때
 `.harnessignore` 목록 기준으로 **제외**한다.
 
+**컨피그 두 갈래 (2026-08-24 확정):** 루트 `harness.config.yaml`은 **이 레포 자신의**
+설정이고 배포 대상이 아니다. 대상 프로젝트의 컨피그는 `config/harness.config.template.yaml`
+로부터 생성된다. 한 파일이 두 역할을 겸하던 시절, 소스의 개인 `vault_root`가 설치 대상에
+그대로 상속되는 결함이 있었다 — 역할 분리가 그 재발 방지책이다.
+
 **스킬 구동 방식 (확정):** 하네스 스킬은 대상 프로젝트의 `.claude/skills/`에 등록하지
 않는다. 플레이북 §1의 파일 직독 방식(`skills/<이름>/SKILL.md`를 읽고 따름)으로만
 구동한다 — 설치 절차에 Skill 도구 등록은 포함하지 않는다.
 
 **업데이트 규칙:** `install/update`는 (a) 소스 최신본 수신 → (b) `.harnessignore` 적용 복사
-→ (c) 기존 `harness.config.yaml` **보존**(사용자 설정 덮어쓰기 금지) → (d) 스키마 변경 시
+→ (c) 대상의 `harness.config.yaml` **보존**(사용자 설정 덮어쓰기 금지 — 스키마 diff는
+템플릿 기준으로 안내만) → (d) 스키마 변경 시
 마이그레이션 안내(§8 에러 계약 준수) 순으로 동작한다. 업데이트 직후 재세팅 없이
 기존 워크플로가 그대로 굴러가야 한다.
 
