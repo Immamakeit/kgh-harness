@@ -83,7 +83,7 @@ cat harness.config.yaml              # 설정 (직접 수정해서 쓴다)
    ├─ config/schema.yaml      # 컨피그 스키마
    ├─ install/                # setup·update·validate-config
    ├─ .meta                   # 소스 경로·커밋 기록 (update가 사용)
-   └─ work/                   # 작업 문서 산출물 — update가 보존한다
+   └─ work/                   # 작업 문서 산출물 (첫 작업 때 생성) — update가 보존한다
 ```
 
 개발용 파일(`PRD.md`·`CLAUDE.md`·`tests/`·소스 레포의 실사용 컨피그)은
