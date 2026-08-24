@@ -364,3 +364,50 @@ PYEOF
   printf 'unknown\n%s\n' "$manifest"
   return 0
 }
+
+# ---- Obsidian vault 탐지 (WSL 전용, 설계 §3-2) ------------------------------
+
+# detect_obsidian_vaults
+#   → "<이름>\t<절대경로>" 를 한 줄씩 stdout. 탐지 실패 시 빈 출력(성공 종료).
+#
+# WSL/Windows 전용이다 — obsidian.json 이 Windows AppData 에 있다.
+# Linux·macOS 는 표준 위치가 다르나 이 저장소에서 실측할 수 없어 다루지 않는다
+# (설계 §4 비대상). 그 환경에서는 빈 출력 → 호출부가 자유 입력으로 열화한다.
+#
+# 탐지 실패를 에러로 만들지 않는다 — vault 지정은 선택이지 요건이 아니다.
+detect_obsidian_vaults() {
+  local cfg raw winpath unixpath
+
+  cfg="$(ls /mnt/c/Users/*/AppData/Roaming/obsidian/obsidian.json 2>/dev/null | head -n1)"
+  [ -n "$cfg" ] || return 0
+  command -v python3 >/dev/null 2>&1 || return 0
+  command -v wslpath >/dev/null 2>&1 || return 0
+
+  raw="$(python3 - "$cfg" <<'PYEOF'
+import json
+import sys
+
+try:
+    with open(sys.argv[1], encoding="utf-8") as f:
+        data = json.load(f)
+except Exception:
+    sys.exit(0)
+
+vaults = data.get("vaults", {}) if isinstance(data, dict) else {}
+if not isinstance(vaults, dict):
+    sys.exit(0)
+
+for v in vaults.values():
+    if isinstance(v, dict) and v.get("path"):
+        print(v["path"])
+PYEOF
+  )" || return 0
+  [ -n "$raw" ] || return 0
+
+  while IFS= read -r winpath; do
+    [ -n "$winpath" ] || continue
+    unixpath="$(wslpath -u "$winpath" 2>/dev/null)" || continue
+    [ -d "$unixpath" ] || continue          # 삭제된 vault 가 목록에 남아 있을 수 있다
+    printf '%s\t%s\n' "$(basename "$unixpath")" "$unixpath"
+  done <<< "$raw"
+}
