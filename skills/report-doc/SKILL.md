@@ -31,7 +31,10 @@ description: Use when implementation and verification are done and it is time to
   컨피그 `workdocs.path` 우선. vault 직접 쓰기 금지 — 저장은 판정 통과 후 obsidian-cli 몫)
 - 템플릿: 구현후보고 템플릿 준수 — 변경 요약 · 커밋(`[작업유형]: 메시지` 형식) ·
   검증 결과(3항목) · 직접 확인 시나리오 · 사용자 판정 + frontmatter + ≤10자 요약.
-- status: `보고`.
+- frontmatter `status` 수명주기(전체, 이 스킬이 정의처): `보고` → 사용자 판정 통과 후
+  (obsidian-cli가 vault 저장 시 갱신) `판정통과`. 판정 실패 시 `보고` 유지하고 ⑦(구현) 단계로
+  재진입한다. **다른 상태값을 창작하지 않는다.** 이 스킬 자신의 산출은 항상 `보고`까지다 —
+  `판정통과`는 판정을 통과한 뒤 저장 단계에서만 붙는다.
 
 ## 4. 직접 확인 시나리오
 

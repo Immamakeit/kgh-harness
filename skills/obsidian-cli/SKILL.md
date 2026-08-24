@@ -31,8 +31,15 @@ description: Use when saving harness output documents (설계/구현계획/구�
 ## 문서 규칙
 
 - 템플릿: `<vault_root>/harness/templates/`의 설계·구현계획·구현후보고 3종을 사용한다.
-- frontmatter의 `project` · `task` · `date` 채움, `status`는 실제 상태로 갱신
-  (설계=승인, 구현계획=완료, 구현후보고=보고 등).
+- frontmatter의 `project` · `task` · `date` 채움. `status`는 **소유 스킬이 정의한
+  수명주기의 최종 상태**로 갱신한다 (값을 창작하지 않는다 — 정의처는 각 소유 스킬):
+
+  | 문서 | 소유 스킬 | 최종 상태 |
+  |---|---|---|
+  | 설계 | design-doc | `승인` |
+  | 구현계획 | plan-doc | `확정` (저장 시 변경 없음 — 이미 완결 상태로 들어옴) |
+  | 구현후보고 | report-doc | `판정통과` |
+
 - summary 블록에 **10자 이내 요약** 필수.
 
 ## CLI 위치 찾기 (환경별 — 실측 규격)
