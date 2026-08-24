@@ -670,7 +670,10 @@ test_validate_config() {
 # 출력의 \r 을 제거해 반환한다.
 run_with_tty() {
   local input="$1" code="$2"
-  printf '%s' "$input" | script -qec "bash -c '$code'" /dev/null 2>&1 | tr -d '\r'
+  # %s (원안)는 리터럴 백슬래시-n을 그대로 두어 read -rp 가 개행을 못 받고
+  # 무한 대기한다(실측: 첫 케이스에서 행업 확인, 프로세스가 read 에서 멈춰 있었음).
+  # %b로 백슬래시 이스케이프를 실제 개행으로 해석해야 pty에 Enter가 전달된다.
+  printf '%b' "$input" | script -qec "bash -c '$code'" /dev/null 2>&1 | tr -d '\r'
 }
 
 test_ask_choice() {
