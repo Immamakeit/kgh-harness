@@ -846,6 +846,7 @@ test_public_distribution() {
   local out6 rc6
   out6="$(cd "$REPO_ROOT" && ./install/setup </dev/null 2>&1)"; rc6=$?
   assert_eq "$rc6" "1" "인자 없는 비대화형 실행 → 차단(rc=1)"
+  assert_contains "$out6" "HRN-E007" "인자 없는 실행도 같은 사유로 차단됨"
 
   # (7) --help 는 설치를 수행하지 않고 사용법만 낸다
   local out7 rc7
