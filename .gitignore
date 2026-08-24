@@ -1,0 +1,25 @@
+# OS·에디터 부산물
+.DS_Store
+Thumbs.db
+*.swp
+*~
+.idea/
+.vscode/
+
+# 로컬 전용 설정·비밀 (커밋 금지)
+*.local.yaml
+*.local.yml
+*.local.json
+.env
+.env.*
+
+# 설치 산출물 — 이 레포를 대상으로 삼은 설치본이 실수로 들어오지 않게
+/.harness/install/
+/.harness/adapters/
+/.harness/core/
+/.harness/skills/
+/.harness/templates/
+/.harness/config/
+/.harness/.meta
+
+# 주의: /.harness/work/ 는 의도적으로 추적한다 (하네스 산출물의 실물 예시).
