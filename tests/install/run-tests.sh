@@ -664,6 +664,89 @@ test_validate_config() {
   assert_contains "$(cat "${dir}/badschema.log")" "HRN-E005" "손상 스키마 → HRN-E005"
 }
 
+# ---- 번호 선택 입력 (ask-choice) -------------------------------------------
+
+# pty를 붙여 대화형 경로를 실행한다. 입력은 $1, 나머지는 bash 코드.
+# 출력의 \r 을 제거해 반환한다.
+run_with_tty() {
+  local input="$1" code="$2"
+  printf '%s' "$input" | script -qec "bash -c '$code'" /dev/null 2>&1 | tr -d '\r'
+}
+
+test_ask_choice() {
+  group "번호 선택 입력 — ask_choice"
+
+  local lib="${REPO_ROOT}/install/lib.sh"
+
+  if ! grep -q '^ask_choice()' "$lib"; then
+    fail_case "ask_choice 실존" "install/lib.sh 에 ask_choice 없음 (RED 기대 상태)"
+    return
+  fi
+
+  local base="source ${lib}; ask_choice \"고르세요\" 3 \"가\" \"나\" \"다\""
+
+  # (1) 유효 번호 선택
+  local out
+  out="$(run_with_tty '2\n' "$base")"
+  assert_contains "$out" "2" "유효 번호 입력 → 그 번호 반환"
+
+  # (2) 빈 입력 → 기본번호
+  out="$(run_with_tty '\n' "echo \$($base)")"
+  assert_contains "$out" "3" "빈 입력(Enter) → 기본번호 3 반환"
+
+  # (3) 범위 밖 → 재질문 후 유효값 수용
+  out="$(run_with_tty '9\n1\n' "echo RESULT=\$($base)")"
+  assert_contains "$out" "RESULT=1" "범위 밖 입력 후 재질문 → 유효값 수용"
+  assert_contains "$out" "1~3" "범위 밖 입력 시 허용 범위를 알려준다"
+
+  # (4) 3회 연속 잘못된 입력 → 기본값 채택 (무한 루프 방지)
+  out="$(run_with_tty 'x\ny\nz\n' "echo RESULT=\$($base)")"
+  assert_contains "$out" "RESULT=3" "3회 실패 → 기본값 채택"
+
+  # (5) 비TTY → 기본값 + 로그 (ask·ask_yn 과 동일 계약)
+  out="$(bash -c "source ${lib}; ask_choice '고르세요' 2 '가' '나' '다'" </dev/null 2>&1)"
+  assert_contains "$out" "2" "비대화형 → 기본번호 반환"
+  assert_contains "$out" "비대화형" "비대화형 사실을 로그로 알린다"
+
+  # (6) ★ 출력 오염 — stdout에는 오직 번호만 (목록이 섞이면 반환값이 깨진다)
+  local captured
+  captured="$(bash -c "source ${lib}; ask_choice '고르세요' 1 '가' '나'" </dev/null 2>/dev/null)"
+  assert_eq "$captured" "1" "stdout 에는 번호만 — 목록·안내가 섞이지 않음"
+
+  # (7) 선택지 0개 → 기본값 (호출부 실수 방어)
+  captured="$(bash -c "source ${lib}; ask_choice '고르세요' 1" </dev/null 2>/dev/null)"
+  assert_eq "$captured" "1" "선택지 0개 → 기본값 반환 (크래시 없음)"
+}
+
+test_detect_obsidian_vaults() {
+  group "Obsidian vault 탐지 — detect_obsidian_vaults"
+
+  local lib="${REPO_ROOT}/install/lib.sh"
+
+  if ! grep -q '^detect_obsidian_vaults()' "$lib"; then
+    fail_case "detect_obsidian_vaults 실존" "install/lib.sh 에 함수 없음 (RED 기대 상태)"
+    return
+  fi
+
+  local out rc
+  out="$(bash -c "source ${lib}; detect_obsidian_vaults" 2>/dev/null)"; rc=$?
+  assert_eq "$rc" "0" "탐지 함수는 항상 성공 종료 (실패는 빈 출력으로 표현)"
+
+  if [ -n "$out" ]; then
+    # 이 환경(WSL)에서는 탐지가 되어야 한다
+    assert_contains "$out" "	" "출력이 <이름>TAB<경로> 형식"
+    local first_path
+    first_path="$(printf '%s' "$out" | head -n1 | cut -f2)"
+    assert_present "$first_path" "탐지된 경로가 실제로 존재한다"
+    case "$first_path" in
+      /*) pass_case "탐지 경로가 절대 유닉스 경로 (wslpath 변환됨)" ;;
+      *)  fail_case "탐지 경로 형식" "유닉스 절대경로가 아님: ${first_path}" ;;
+    esac
+  else
+    pass_case "탐지 결과 없음 — 비WSL 환경이거나 등록 vault 0개 (열화 정상)"
+  fi
+}
+
 # ============================================================================
 # 실행
 # ============================================================================
@@ -676,6 +759,8 @@ test_harness_cli_missing
 test_superpowers_prereq
 test_join_lines
 test_validate_config
+test_ask_choice
+test_detect_obsidian_vaults
 
 printf '\n=== 요약 ===\n'
 printf 'PASS: %d  FAIL: %d\n' "$PASS" "$FAIL"
