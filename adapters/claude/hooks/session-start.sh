@@ -1,6 +1,6 @@
 #!/usr/bin/env bash
 #
-# kgh-dev-harness SessionStart 훅 — 얇은 방아쇠.
+# kgh-harness SessionStart 훅 — 얇은 방아쇠.
 # 하는 일 딱 하나: 지휘 플레이북 + 프로젝트 컨피그를 세션 컨텍스트로 주입한다.
 # 해석·검증·디스패치는 전부 플레이북 지침에 따라 메인 세션이 수행한다 (설계 A안).
 

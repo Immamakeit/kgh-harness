@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# install/setup [대상경로] — kgh-dev-harness 최초 설치 + 1회 세팅.
+# install/setup [대상경로] — kgh-harness 최초 설치 + 1회 세팅.
 # 소스 레포(이 파일이 들어있는 레포)에서 실행한다: ./install/setup /path/to/project
 #
 # interactive-script 스킬 표준 적용: 사전 점검 → 대화형+디폴트(비TTY 폴백) →
@@ -11,7 +11,7 @@ SOURCE_DIR="$(cd "${SCRIPT_DIR}/.." && pwd)"
 # shellcheck source=./lib.sh
 source "${SCRIPT_DIR}/lib.sh"
 
-say "=== kgh-dev-harness 설치 ==="
+say "=== kgh-harness 설치 ==="
 say "소스 레포: ${SOURCE_DIR}"
 echo
 
@@ -19,14 +19,14 @@ echo
 
 if [ ! -f "${SOURCE_DIR}/core/playbook.md" ]; then
   hrn_err "E005" "소스 레포 무결성 실패 — core/playbook.md 미발견 (${SOURCE_DIR})" \
-    "kgh-dev-harness 레포 루트에서 install/setup을 실행하세요" \
+    "하네스 소스 레포(kgh-harness) 루트에서 실행하세요 — git clone https://github.com/Immamakeit/kgh-harness.git" \
     "git status/git checkout으로 소스 레포를 정상 상태로 복원하세요"
   exit 1
 fi
 
 if [ ! -f "${SOURCE_DIR}/.harnessignore" ]; then
   hrn_err "E005" ".harnessignore 미발견 — 배포 제외 목록 없이는 설치할 수 없음 (${SOURCE_DIR})" \
-    "kgh-dev-harness 레포 루트에서 install/setup을 실행하세요" \
+    "하네스 소스 레포(kgh-harness) 루트에서 실행하세요 — git clone https://github.com/Immamakeit/kgh-harness.git" \
     "git status/git checkout으로 소스 레포를 정상 상태로 복원하세요"
   exit 1
 fi

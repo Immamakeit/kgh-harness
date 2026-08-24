@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# install/update — kgh-dev-harness 업데이트.
+# install/update — kgh-harness 업데이트.
 # 대상 프로젝트에 설치된 배포물 안에서 실행한다: <프로젝트>/.harness/install/update
 #
 # 계약: 루트 harness.config.yaml 미접촉, .harness/work/ 보존, 새 컨피그 키는 안내만
@@ -13,7 +13,7 @@ TARGET_DIR="$(cd "${HARNESS_DIR}/.." && pwd)"
 # shellcheck source=./lib.sh
 source "${SCRIPT_DIR}/lib.sh"
 
-say "=== kgh-dev-harness 업데이트 ==="
+say "=== kgh-harness 업데이트 ==="
 say "대상 프로젝트: ${TARGET_DIR}"
 echo
 
@@ -68,7 +68,7 @@ if ! source_is_valid "${SOURCE_PATH:-}"; then
   if ! source_is_valid "$NEW_PATH"; then
     err "유효한 소스 레포 경로를 확인할 수 없어 업데이트를 진행할 수 없습니다."
     err "  원인: 입력된 경로에 core/playbook.md 또는 install/lib.sh가 없거나 경로가 비어 있음"
-    err "  해결: 소스 레포(kgh-dev-harness) 경로를 정확히 알아낸 뒤 재실행하거나,"
+    err "  해결: 소스 레포(kgh-harness) 경로를 정확히 알아낸 뒤 재실행하거나,"
     err "        소스 레포에서 install/setup ${TARGET_DIR} 로 재설치하세요."
     exit 1
   fi
