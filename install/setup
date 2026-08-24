@@ -11,6 +11,37 @@ SOURCE_DIR="$(cd "${SCRIPT_DIR}/.." && pwd)"
 # shellcheck source=./lib.sh
 source "${SCRIPT_DIR}/lib.sh"
 
+usage() {
+  cat <<'USAGE'
+kgh-harness install/setup — 하네스를 대상 프로젝트에 설치하고 1회 세팅한다.
+
+사용법:
+  install/setup <대상 프로젝트 경로>
+  install/setup -h | --help
+
+동작:
+  1) 사전 점검 (rsync·python3·하네스 CLI·superpowers)
+  2) .harnessignore 를 적용해 배포물을 <대상>/.harness/ 로 복사
+  3) <대상>/harness.config.yaml 생성 (이미 있으면 보존 — 덮어쓰지 않음)
+  4) storage.vault_root 대화형 지정 (비대화형이면 건너뜀 — HRN-W010)
+  5) <대상>/.claude/settings.json 에 SessionStart 훅 병합 (기존 훅 보존)
+  6) 컨피그 검증 후 종료 요약
+
+비대화형(에이전트·CI): 표준입력이 TTY가 아니면 모든 질문이 디폴트로 처리되고
+그 사실이 로그에 남는다. 대상 경로는 반드시 인자로 넘겨야 한다 —
+인자를 생략하면 대상이 소스 레포 자신이 되어 HRN-E007로 차단된다.
+
+예시:
+  git clone https://github.com/Immamakeit/kgh-harness.git ~/.kgh-harness
+  ~/.kgh-harness/install/setup /path/to/project
+  cd /path/to/project && .harness/install/validate-config
+USAGE
+}
+
+case "${1:-}" in
+  -h|--help) usage; exit 0 ;;
+esac
+
 say "=== kgh-harness 설치 ==="
 say "소스 레포: ${SOURCE_DIR}"
 echo
