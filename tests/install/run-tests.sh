@@ -905,6 +905,32 @@ test_hook_doc_state() {
 
   # (6) 스킬이 배포물에 실린다
   assert_present "${REPO_ROOT}/skills/set-initial/SKILL.md" "set-initial 스킬 실존"
+
+  # (7) PRD.md 자리가 디렉토리인 경우 → 훅 rc=0, "없음" (-f 검사가 자연스럽게 걸러냄)
+  local d7 out7 rc7
+  d7="$(mktemp -d "${WORK}/hook-dir.XXXXXX")"
+  mkdir -p "${d7}/PRD.md"
+  out7="$(CLAUDE_PROJECT_DIR="$d7" bash "$hook" 2>&1)"; rc7=$?
+  assert_eq "$rc7" "0" "PRD.md 자리가 디렉토리여도 훅 rc=0"
+  assert_contains "$out7" "PRD.md: 없음 · CLAUDE.md: 없음 · AGENTS.md: 없음" \
+    "PRD.md 자리가 디렉토리면 '없음' (파일 아님)"
+
+  # (8) 읽기 권한 없는 파일(내용 있음) → 훅 rc=0, "없음"
+  # root로 돌리면 권한 검사가 무의미해져 통과하지 못할 수 있으니 root 실행 시 건너뛰고
+  # 그 사실을 pass 사유로 남긴다.
+  if [ "$(id -u)" = "0" ]; then
+    pass_case "읽기 권한 없는 파일 → '없음' (root 실행 — 권한 검사 무의미, 건너뜀)"
+  else
+    local d8 out8 rc8
+    d8="$(mktemp -d "${WORK}/hook-noperm.XXXXXX")"
+    printf '내용 있음\n' > "${d8}/PRD.md"
+    chmod 000 "${d8}/PRD.md"
+    out8="$(CLAUDE_PROJECT_DIR="$d8" bash "$hook" 2>&1)"; rc8=$?
+    chmod 644 "${d8}/PRD.md"
+    assert_eq "$rc8" "0" "읽기 권한 없는 PRD.md여도 훅 rc=0"
+    assert_contains "$out8" "PRD.md: 없음 · CLAUDE.md: 없음 · AGENTS.md: 없음" \
+      "읽기 권한 없는 파일은 '없음' (grep 실패 → 없음 취급)"
+  fi
 }
 
 # ============================================================================
