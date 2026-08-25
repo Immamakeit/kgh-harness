@@ -98,10 +98,29 @@ updated: null
 
 ```
 전역:      commit_format: {conventional-commits: 12, bracket-type: 3}
-프로젝트:  commit_format: {bracket-type: 2}
+프로젝트:  commit_format: {bracket-type: 4}
 → 추천: bracket-type   (전역의 conventional-commits 12는 이 질문에서는 보지 않는다 —
                         프로젝트 파일에 commit_format 기록이 있으므로 전역은 무시)
 ```
+
+**표본이 임계값 미만이면 전역으로 넘어가지 않는다** — 파일 선택이 먼저고, 표본 3
+규칙은 **고른 파일 안에서** 적용된다. 두 규칙이 겹치는 이 경우를 따로 적어 둔다:
+
+```
+전역:      commit_format: {conventional-commits: 12, bracket-type: 3}
+프로젝트:  commit_format: {bracket-type: 2}          # 표본 2 → 임계값 3 미만
+→ 추천: 스킬 표의 기본값, 근거 문구는 `(이력 부족 — 스킬 기본값)`
+   (프로젝트에 기록이 있으므로 전역은 여전히 무시한다. 표본이 모자라니 그 프로젝트
+    통계도 믿지 않고, 전역으로 되돌아가지도 않는다 — 셋 중 어느 것도 아닌 스킬 기본값)
+```
+
+이 조합은 사용자에게 **놀라울 수 있다**: 이 프로젝트에서 한두 번 고른 순간 전역의
+강한 이력이 가려지면서 추천이 오히려 `(이력 부족 — 스킬 기본값)`으로 후퇴한다.
+그래서 근거 문구를 반드시 붙인다 — 사용자가 "왜 갑자기 추천이 약해졌지"를 그 자리에서
+읽을 수 있어야 한다. (2026-08-25 국면 B 관찰에서 이 조합이 실제로 재현됐고, 그때까지
+이 문서의 예시는 표본 2에서 `bracket-type`을 추천한다고 적혀 있어 위 규칙과
+모순이었다 — 예시 쪽을 규칙에 맞춰 고쳤다. `tests/skills/preference-options/green-results-b.md`
+REFACTOR 1 참조.)
 
 같은 호출에서 질문마다 결과가 다른 파일에서 나올 수 있다 — 예: `commit_format`은
 프로젝트 파일에 기록이 있어 프로젝트를 보고, `branch_strategy`는 프로젝트 파일에
