@@ -852,6 +852,44 @@ test_playbook_rule_contracts() {
     "HRN-W020: 비차단 취지 실존"
 }
 
+# ---- 질문 라벨 계약 (question-labels, 2026-08-25) --------------------------
+# 사고: 오케스트레이터가 이메일 처리 선택지를 추천 순으로 재배열하면서 라벨을
+# 갱신하지 않아 `(b) (a) (c) (d)` 순서로 나갔다. 선택지=번호(표시 순서와 항상
+# 일치)·HRN 복구 경로 (a)(b)=선택지가 아닌 안내 라는 규칙이 플레이북 §6에
+# 실존하는지, 그리고 set-initial·branch-strategy 두 스킬이 같은 문구를 그대로
+# 상속했는지 단언한다. 행동 검증은 못 한다 — 이 결함도 테스트가 아니라
+# 사용자의 눈으로 발견됐다(설계 §4 비대상).
+test_question_label_contracts() {
+  group "질문 라벨 계약 — 선택지=번호, 복구 경로=안내 (question-labels)"
+
+  local pb="${REPO_ROOT}/core/playbook.md"
+  local si="${REPO_ROOT}/skills/set-initial/SKILL.md"
+  local bs="${REPO_ROOT}/skills/branch-strategy/SKILL.md"
+  assert_present "$pb" "core/playbook.md 실존"
+  assert_present "$si" "skills/set-initial/SKILL.md 실존"
+  assert_present "$bs" "skills/branch-strategy/SKILL.md 실존"
+
+  local pb_flat si_flat bs_flat
+  pb_flat="$(tr '\n' ' ' < "$pb" | tr -s ' ')"
+  si_flat="$(tr '\n' ' ' < "$si" | tr -s ' ')"
+  bs_flat="$(tr '\n' ' ' < "$bs" | tr -s ' ')"
+
+  # "번호는 표시 순서와 일치" 취지 — 재정렬 시 재넘버링까지 근접해 실존
+  assert_regex "$pb_flat" '번호는[^~]{0,20}표시 순서[^~]{0,20}일치' \
+    "§6: '번호는 표시 순서와 일치' 취지 실존"
+
+  # "복구 경로 (a)(b)는 선택지가 아니라 안내" 취지 — HRN 근처에 (a)(b)와
+  # "선택지가 아니"가 함께 실존해야 한다
+  assert_regex "$pb_flat" 'HRN[^~]{0,30}복구 경로[^~]{0,10}\(a\)[^~]{0,10}\(b\)[^~]{0,40}선택지가 아니' \
+    "§6: HRN 복구 경로 (a)(b)는 '선택지가 아니다' 취지 실존"
+
+  # 상속 문구 — 두 스킬에 동일하게 실존. 문구가 갈리면 이 작업의 취지가 무너진다
+  assert_regex "$si_flat" '번호는[^~]{0,20}표시 순서[^~]{0,20}일치' \
+    "set-initial 질문 계약: '번호는 표시 순서와 일치' 상속 실존"
+  assert_regex "$bs_flat" '번호는[^~]{0,20}표시 순서[^~]{0,20}일치' \
+    "branch-strategy 질문 계약: '번호는 표시 순서와 일치' 상속 실존"
+}
+
 # ---- 플레이북 절 참조 정합 (agent-mode T8) ----------------------------------
 # `§x-y` 형태의 문서 내부 참조가 실재하는 절을 가리키는지 파이썬으로 파싱해 대조한다.
 # ⑧ 리뷰어가 지난 회차에 손으로 확인해준 항목 — 손으로 할 일이면 테스트가 할 일이다.
@@ -1230,6 +1268,7 @@ test_superpowers_prereq
 test_join_lines
 test_validate_config
 test_playbook_rule_contracts
+test_question_label_contracts
 test_playbook_cross_refs
 test_ask_choice
 test_detect_obsidian_vaults
