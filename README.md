@@ -89,6 +89,27 @@ bootstrap:
 
 에이전트는 `.harness/skills/set-initial/SKILL.md` 를 읽고 그대로 따르면 된다.
 
+## 브랜치 보호
+
+GitHub 원격 저장소에 main 직접 푸시 금지·PR 필수 규칙을 걸어준다. **세션 시작
+때 먼저 제안하지 않는다** — 명시적으로 요청할 때만 실행된다.
+
+```
+브랜치 보호 설정해줘
+```
+
+- 적용 전에 현재 상태(보호 없음/있음)와 위협 모델을 있는 그대로 보여준다
+  ("PUBLIC이라도 협력자 아닌 사람은 애초에 push 불가" 등 — 과장하지 않는다).
+- 표준/최소/엄격 중 고르거나 직접 입력한다. 협력자가 1명뿐이면 승인 인원 기본값을
+  0으로 낮추고, "엄격"을 고르면 자기잠금 위험을 경고한다.
+- 실제로 보낼 요청 내용을 미리 보여준 뒤에만 적용 여부를 묻는다(기본: 적용 안 함).
+- 적용 전 상태를 저장해두고, 되돌리는 명령을 항상 알려준다.
+- `CLAUDE.md`는 건드리지 않는다 — 문서와 실제 설정이 어긋나면 안내만 하고,
+  고치는 건 초기 세팅(`set-initial`) 쪽에서 한다.
+- v1은 GitHub·`main` 계열 브랜치 1개만 지원한다.
+
+에이전트는 `.harness/skills/branch-strategy/SKILL.md` 를 읽고 그대로 따르면 된다.
+
 ## 설치되는 것
 
 ```
@@ -98,7 +119,7 @@ bootstrap:
 └─ .harness/
    ├─ core/playbook.md        # 세션에 주입되는 워크플로 본문
    ├─ adapters/claude/        # Claude Code 어댑터
-   ├─ skills/                 # 하네스 스킬 8종
+   ├─ skills/                 # 하네스 스킬 9종
    ├─ templates/              # 문서 서식 3종
    ├─ config/schema.yaml      # 컨피그 스키마
    ├─ install/                # setup · update · validate-config

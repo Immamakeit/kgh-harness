@@ -39,7 +39,8 @@ AI 코딩 하네스(Claude Code, 추후 Codex)에 설치하는 **개발 워크�
 
 **포함:** Claude Code 어댑터 · 컨피그 로더/리졸버 · 오케스트레이터 지침 · SessionStart 훅 ·
 내 스킬 번들(7종 신규 제작 — cost-bottleneck-check·design-doc·plan-doc·report-doc·
-obsidian-cli·interactive-script·scope-splitter, + 기반 문서 세팅 set-initial) +
+obsidian-cli·interactive-script·scope-splitter, + 9구간 워크플로 밖의 독립 유틸리티
+스킬 2종 — 기반 문서 세팅 set-initial, 원격 GitHub 브랜치 보호 branch-strategy) +
 superpowers 전제 · 대화형 설치 스크립트 ·
 9단계 워크플로 + 게이트.
 
@@ -183,10 +184,10 @@ Claude/Codex의 모델명·규격은 변할 수 있다. 흐름 시작 시 Resolv
 | `HRN-E008` | 필수 실행체·도구 미발견 (하네스 CLI·rsync 등) | 설치 또는 active_harness 변경 |
 | `HRN-E009` | 모델 디스패치 실패 (폐기·권한·플랜) — defaults 1회 폴백 후에도 실패 | 컨피그 model 변경 또는 어댑터 지원 목록 갱신 |
 | `HRN-E010` | active_harness가 미구현 어댑터 (codex·ollama는 추후) | claude로 변경 또는 어댑터 구현 |
-| `HRN-E011` *(예정 — branch-strategy)* | gh CLI 미인증 | gh auth login 또는 인증된 환경에서 재실행 |
-| `HRN-E012` *(예정 — branch-strategy)* | gh 토큰 repo 스코프 없음 | gh auth refresh -s repo 또는 PAT 재발급 |
-| `HRN-E013` *(예정 — branch-strategy)* | 원격이 GitHub 아님/원격 없음 | GitHub 원격 추가 또는 해당 플랫폼 수동 설정 |
-| `HRN-E014` *(예정 — branch-strategy)* | 저장소 admin 권한 없음/조회 불가 | admin 계정 재인증 또는 admin에게 대신 요청 |
+| `HRN-E011` | gh CLI 미인증 | gh auth login 또는 인증된 환경에서 재실행 |
+| `HRN-E012` | gh 토큰 repo 스코프 없음 | gh auth refresh -s repo 또는 PAT 재발급 |
+| `HRN-E013` | 원격이 GitHub 아님/원격 없음 | GitHub 원격 추가 또는 해당 플랫폼 수동 설정 |
+| `HRN-E014` | 저장소 admin 권한 없음/조회 불가 | admin 계정 재인증 또는 admin에게 대신 요청 |
 | `HRN-W010` | `vault_root` 미지정 (경고, 비차단) | vault_root 지정 |
 | `HRN-W011` | Obsidian CLI 미가용(앱 꺼짐/미등록/미설치) → 파일 직접 쓰기로 폴백 (경고, 비차단) | Obsidian 앱 실행 후 재시도(CLI 이점 복원) 또는 폴백 결과 그대로 사용 |
 | `HRN-W012` | 프로젝트에 harness.config.yaml 없음 (경고, 비차단 — 플레이북 기본값으로 진행) | install/setup으로 컨피그 생성 |
@@ -196,7 +197,7 @@ Claude/Codex의 모델명·규격은 변할 수 있다. 흐름 시작 시 Resolv
 | `HRN-W016` | 서브에이전트 디스패치 불가(사전/사후 신호) — 싱글 모드로 열화 (경고, 비차단) | 세션 지침에서 서브에이전트 허용 후 재시도 또는 그대로 진행 |
 | `HRN-W017` *(예정 — preference-options)* | 선호 프로필 파일 손상/파싱 실패 (비차단 — 프로필 없이 스킬 기본값으로 진행) | (a) `~/.claude/harness/preferences.yaml`을 고치거나 삭제(다음 접근 시 재생성) (b) `preferences.as_recommended`를 꺼서 추천 계층 자체를 우회 |
 | `HRN-W018` *(예정 — preference-options)* | 선호 프로필 쓰기 실패, 권한 등 (비차단 — 이번 선택은 학습에 반영 안 됨, 진행은 계속) | (a) `~/.claude/harness/` 권한 확인 (b) `CLAUDE_CONFIG_DIR`로 쓰기 가능한 경로 지정 |
-| `HRN-W019` *(예정 — branch-strategy)* | 브랜치 보호 설정 일부만 적용 성공 (경고, 비차단) | 실패 항목 수동 설정 또는 재실행 |
+| `HRN-W019` | 브랜치 보호 설정 일부만 적용 성공 (경고, 비차단) | 실패 항목 수동 설정 또는 재실행 |
 | `HRN-W020` | 컨피그 검증기 파일은 존재하나 실행 불가 (경고, 비차단) | 실행 권한 부여(chmod +x) 또는 해당 명령 실행 허용 후 재검증, 또는 검증 없이 진행 |
 
 raw 에러 노출 금지 — 항상 위 형식으로 래핑한다. (vault `script-standards.md` 준수)
