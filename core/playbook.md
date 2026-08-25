@@ -13,6 +13,26 @@
 | 단순 질문·정보 조회·사소한 편집 (오타 수정 등) | 흐름 없이 바로 처리 |
 | 사용자가 명시적으로 "하네스 없이/그냥 해줘" | 그 요청에 한해 흐름 생략 (생략 사실을 한 줄 보고) |
 
+
+### 0-1. 기반 문서 세팅 제안 (set-initial)
+
+훅이 매 세션 `## 프로젝트 기반 문서 상태` 한 줄을 준다. 그걸 보고 판단한다.
+
+- `PRD.md`·`CLAUDE.md`·`AGENTS.md` 중 하나라도 **없음** 이고 컨피그 `bootstrap.prompt` 가
+  `off` 가 아니면 → **첫 응답에서 딱 한 번** 제안한다:
+
+  > 이 프로젝트에 <없는 문서들>이 없습니다. 기반 문서를 세팅할까요?
+  > 1) 지금 한다  2) 나중에  3) 다시 묻지 않기
+  > 번호 입력 [기본: 1]
+
+- "지금"이면 `skills/set-initial/SKILL.md` 를 읽고 그 지침대로 수행한다.
+- "나중에"면 **그 세션에서 다시 꺼내지 않는다.** "다시 묻지 않기"면 컨피그의
+  `bootstrap.prompt` 를 `off` 로 바꿔도 되는지 확인하고 바꾼다.
+- **사용자가 직접 요청하면**(“초기 세팅 해줘”·“CLAUDE.md 새로 만들어줘”) 문서 유무와
+  `bootstrap.prompt` 값과 **무관하게** 스킬을 실행한다 — 기존 문서를 갈아엎는 경로다.
+- 이 제안은 §2의 9구간 흐름이 **아니다.** 흐름 시작 보고를 내지 않고, 설계 승인·판정
+  게이트도 태우지 않는다.
+
 ## 1. 컨피그 해석 (흐름 시작마다 다시 읽기 — 즉시 반영)
 
 1. 프로젝트 루트의 `harness.config.yaml`을 **매 흐름 시작 시 다시 읽는다.** 캐시 금지.
@@ -43,7 +63,7 @@
        `❌ HRN-E009 — 모델 디스패치 실패(<사유>) — defaults.model 폴백도 실패. 조치: (a) 컨피그의 model 값을 변경 (b) 어댑터(adapters/claude/) 지원 모델 목록을 갱신` 보고 후 해당 구간을 중단한다.
 4. 하네스 스킬 위치: 컨피그의 skills 중 `superpowers:` 접두사는 Skill 도구로 호출,
    나머지(cost-bottleneck-check, design-doc, plan-doc, report-doc, obsidian-cli,
-   interactive-script, scope-splitter)는 **하네스 루트 `skills/<이름>/SKILL.md`를 읽고
+   interactive-script, scope-splitter, set-initial)는 **하네스 루트 `skills/<이름>/SKILL.md`를 읽고
    그 지침을 따른다.** 파일이 없으면 `HRN-E005` 보고.
    - **전제 깨짐 (superpowers 미설치, PRD R4·R6, `HRN-W014`):** Skill 도구로 `superpowers:` 스킬을 호출했는데 "해당 스킬 없음"으로 실패하면:
      ① silent 금지 — 즉시 `⚠️ HRN-W014 — superpowers 스킬 '<이름>' 미발견` 보고.
