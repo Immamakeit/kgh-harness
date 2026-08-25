@@ -370,7 +370,14 @@ echo
 # ---- 7b. 컨피그 검증 ---------------------------------------------------------
 
 CONFIG_VALID="미실행"
-if [ -x "${SCRIPT_DIR}/validate-config" ]; then
+if [ ! -f "${SCRIPT_DIR}/validate-config" ]; then
+  CONFIG_VALID="건너뜀 (검증기 없음 — install/update로 최신본을 받으세요)"
+elif [ ! -x "${SCRIPT_DIR}/validate-config" ]; then
+  hrn_warn "W020" "컨피그 검증기를 실행할 수 없습니다 (파일은 존재, 사유: 실행 권한 없음)" \
+    "chmod +x ${SCRIPT_DIR}/validate-config 후 재실행하세요" \
+    "검증 없이 진행 — 컨피그 오타는 해당 구간에 도달할 때 드러납니다"
+  CONFIG_VALID="건너뜀 (검증기 실행 불가 — 위 HRN-W020 참조)"
+else
   set +e
   "${SCRIPT_DIR}/validate-config" "${TARGET_CONFIG}"
   VC_RC=$?
@@ -380,8 +387,6 @@ if [ -x "${SCRIPT_DIR}/validate-config" ]; then
     2) CONFIG_VALID="건너뜀 (검증 전제 미충족 — 위 HRN-W015 참조)" ;;
     *) CONFIG_VALID="실패 (위 오류 참조 — 설치는 완료됨)" ;;
   esac
-else
-  CONFIG_VALID="건너뜀 (검증기 없음 — install/update로 최신본을 받으세요)"
 fi
 echo
 
