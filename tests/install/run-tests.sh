@@ -1179,6 +1179,35 @@ test_preference_integration_contracts() {
   assert_regex "$si_flat" '건너뛰기' "set-initial: '건너뛰기' 요소 유지"
   assert_regex "$si_flat" '\[기본:' "set-initial: 기본번호 표기 유지"
 
+  # ── as-recommended 예시 표의 번호 정합 (국면 C T12 REFACTOR) ───────────
+  # 자동 채택 예시 표는 **재배열 뒤의 상태**를 보여준다 — 추천을 1번으로 올렸으면
+  # 표에 적히는 번호도 1이어야 한다(플레이북 §6 '번호는 표시 순서와 일치').
+  # 예시가 `2) ...` 를 보여주면 그 예시 자체가 라벨 규칙 위반의 본보기가 된다.
+  # T12 헤드리스 관찰이 실제로 이 어긋남을 지적해 도입한 단언이다.
+  local exf exline
+  for exf in "${REPO_ROOT}/core/playbook.md" "${REPO_ROOT}/skills/set-initial/SKILL.md"; do
+    local bad=0
+    while IFS= read -r exline; do
+      case "$exline" in
+        *"| 1)"*) ;;
+        *) bad=$((bad + 1)) ;;
+      esac
+    done < <(grep -E '^\| Q[0-9][^|]*\| [0-9]\)' "$exf" || true)
+    if [ "$bad" -eq 0 ]; then
+      pass_case "as-recommended 예시 표: 선택 칸이 전부 1) — $(basename "$(dirname "$exf")")/$(basename "$exf")"
+    else
+      fail_case "as-recommended 예시 표: 선택 칸이 전부 1)" \
+        "$(basename "$exf") 에 1) 이 아닌 선택 칸 ${bad}개 — 재배열 후 번호와 어긋남"
+    fi
+  done
+
+  # preference-options 스킬이 as_recommended 해석을 **자기 문서로** 소유하는가.
+  # 플레이북에만 있으면, 스킬 문서만 읽는 호출부는 일반 원칙에서 매번 새로 유도해야 한다.
+  local po_flat
+  po_flat="$(tr '\n' ' ' < "$po" | tr -s ' ')"
+  assert_regex "$po_flat" 'as_recommended[^~]{0,300}true[^~]{0,200}false' \
+    "preference-options: as_recommended 해석 규칙을 자기 문서가 소유"
+
   # ── 문서화 계약 (국면 C T11) ───────────────────────────────────────────
   # README 설정 표는 사용자가 컨피그를 알아보는 유일한 산문 안내다 — 여기 없는 키는
   # 실질적으로 존재하지 않는 키다. PRD §8 의 (예정) 표기는 구현이 끝나면 떼는 것이
