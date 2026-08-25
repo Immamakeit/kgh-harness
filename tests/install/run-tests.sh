@@ -894,8 +894,17 @@ test_question_label_contracts() {
   pd_flat="$(tr '\n' ' ' < "${REPO_ROOT}/skills/plan-doc/SKILL.md")"
   assert_regex "$pd_flat" '비대상입니다[^~]{0,80}1\)[^~]{0,80}2\)' \
     "plan-doc 범위 게이트 선택지가 번호(1)/2))로 제시됨"
-  assert_not_contains "$pd_flat" "**(a) 설계 수정" \
-    "plan-doc 범위 게이트에 알파벳 라벨 잔여 없음"
+  assert_regex "$pb_flat" '이진 확인[^~]{0,60}예외|Y/n[^~]{0,60}예외' \
+    "플레이북: Y/n 이진 확인이 번호 규칙의 예외임을 명시"
+  # 리터럴 한 문자열만 막으면 볼드를 떼거나 문구를 바꿔 다시 넣을 수 있다(⑧ 검증에서
+  # 뮤테이션으로 실증됨). plan-doc 은 HRN 코드를 내지 않으므로 (a)/(b) 가 정당하게
+  # 쓰일 자리가 없다 — 문서 전체에서 부재를 단언한다. 나중에 이 스킬이 HRN 복구 경로를
+  # 갖게 되면 그때 이 단언을 의식적으로 고친다.
+  assert_regex "$pd_flat" '^[^~]*$' "plan-doc 읽기 성공"
+  case "$pd_flat" in
+    *'(a)'*|*'(b)'*) fail_case "plan-doc 에 알파벳 라벨 부재" "(a) 또는 (b) 가 발견됨" ;;
+    *) pass_case "plan-doc 에 알파벳 라벨 부재" ;;
+  esac
 }
 
 # ---- 플레이북 절 참조 정합 (agent-mode T8) ----------------------------------
