@@ -192,13 +192,17 @@ harness_copy() {
     [ -z "$pat" ] && continue
     excludes+=(--exclude="$pat")
   done < <(harnessignore_patterns "$src")
-  # work/·.meta는 target 전용 산출물이라 소스에 애초에 없지만, 방어적으로 명시 제외.
+  # work/·.meta·preferences.yaml은 target 전용 산출물이라 소스에 애초에 없지만,
+  # 방어적으로 명시 제외.
   # --delete와 함께 쓰여도 --exclude에 매칭되는 항목은 rsync 기본 동작상 삭제 대상에서
   # 제외된다(rsync는 --delete-excluded가 아닌 한 제외 항목을 "안 보이는" 것으로 취급) —
-  # 그래서 work/·.meta는 재복사에 소스 삭제분을 반영(F5)해도 항상 보존된다.
+  # 그래서 세 항목은 재복사에 소스 삭제분을 반영(F5)해도 항상 보존된다.
   # 앞에 "/"를 붙여 전송 루트 기준 최상위로 앵커링한다(G4) — 앵커가 없으면 rsync는
   # 임의 깊이의 동명 디렉토리(예: skills/foo/work/)까지 오제외할 수 있다.
-  excludes+=(--exclude="/work/" --exclude="/.meta")
+  # preferences.yaml: preference-options 스킬이 write_to: project 일 때 대상에서 lazy
+  # 생성하는 학습 파일이다. 대상에서만 자라므로 제외하지 않으면 update 마다 --delete로
+  # 지워져 학습이 통째로 초기화된다(work/와 같은 성격 — 사용자 산출물).
+  excludes+=(--exclude="/work/" --exclude="/.meta" --exclude="/preferences.yaml")
   local out count
   # --delete: 소스에서 삭제된 파일을 대상에서도 제거(F5). work/·.meta·기타 제외 목록은
   # 위 --exclude로 보호되므로 삭제되지 않는다.

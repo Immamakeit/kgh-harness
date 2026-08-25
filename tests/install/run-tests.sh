@@ -250,10 +250,16 @@ test_rsync_contract() {
 PRD.md
 EOF
 
-  # 대상에는 이미 target 전용 산출물(work/·.meta)이 있다고 가정 — 소스엔 없음.
+  # 대상에는 이미 target 전용 산출물(work/·.meta·preferences.yaml)이 있다고 가정 —
+  # 소스엔 없음. preferences.yaml 은 preference-options 스킬이 대상에서 lazy 생성하는
+  # 학습 파일이라, 제외하지 않으면 update 마다 --delete 로 날아간다.
   mkdir -p "$dest/work"
   echo "사용자 작업 문서" > "$dest/work/mydoc.md"
   printf 'SOURCE_PATH=%s\n' "$src" > "$dest/.meta"
+  printf 'version: 1\nstats: {}\n' > "$dest/preferences.yaml"
+  # 앵커(/preferences.yaml)가 없으면 임의 깊이의 동명 파일까지 오제외된다 — 그 회귀를
+  # 잡기 위해 소스에 중첩 동명 파일을 하나 둔다(정상 복사되어야 한다).
+  echo "nested-pref" > "$src/skills/dummy/preferences.yaml"
 
   local count1
   count1="$(harness_copy "$src" "$dest" 2>/dev/null)"
@@ -267,6 +273,10 @@ EOF
   assert_present "$dest/tobedeleted.txt" "삭제 전 파일 정상 복사(--delete 테스트 준비)"
   assert_present "$dest/skills/dummy/work/keepme.txt" \
     "중첩 동명 work/ 오제외 없음 (앵커가 최상위만 적용)"
+  assert_present "$dest/preferences.yaml" "preferences.yaml 보존 (앵커 /preferences.yaml)"
+  assert_contains "$(cat "$dest/preferences.yaml")" "stats" "preferences.yaml 내용 불변"
+  assert_present "$dest/skills/dummy/preferences.yaml" \
+    "중첩 동명 preferences.yaml 오제외 없음 (앵커가 최상위만 적용)"
 
   # 소스에서 파일 삭제 → 재복사 시 대상에서도 사라져야 함(--delete 전파)
   rm -f "$src/tobedeleted.txt"
@@ -277,6 +287,7 @@ EOF
   assert_present "$dest/.meta" "--delete 적용 후에도 .meta 보존"
   assert_present "$dest/skills/dummy/work/keepme.txt" \
     "--delete 적용 후에도 중첩 동명 work/ 보존(오삭제 없음)"
+  assert_present "$dest/preferences.yaml" "--delete 적용 후에도 preferences.yaml 보존"
   : "$count2"
 }
 
@@ -361,6 +372,10 @@ test_update_contract() {
 
   mkdir -p "${target}/.harness/work"
   echo "사용자 작업 문서" > "${target}/.harness/work/mydoc.md"
+  # 프로젝트 선호 프로필(preference-options, write_to: project) — 대상에서만 자라는
+  # 학습 파일이다. 이게 날아가면 업데이트마다 학습이 초기화된다.
+  printf 'version: 1\nstats:\n  set-initial.commit_format:\n    bracket-type: 4\n' \
+    > "${target}/.harness/preferences.yaml"
   local cfg_before installed_at_before
   cfg_before="$(cat "${target}/harness.config.yaml")"
   installed_at_before="$(grep '^INSTALLED_AT=' "${target}/.harness/.meta")"
@@ -377,6 +392,9 @@ test_update_contract() {
 
   assert_present "${target}/.harness/work/mydoc.md" "update 후 work/ 보존"
   assert_eq "$(cat "${target}/.harness/work/mydoc.md")" "사용자 작업 문서" "work/ 내용 불변"
+  assert_present "${target}/.harness/preferences.yaml" "update 후 프로젝트 선호 프로필 보존"
+  assert_contains "$(cat "${target}/.harness/preferences.yaml")" "bracket-type: 4" \
+    "프로젝트 선호 프로필 내용 불변 (학습 카운트 유지)"
 
   assert_eq "$(cat "${target}/harness.config.yaml")" "$cfg_before" "루트 harness.config.yaml 미접촉"
 
