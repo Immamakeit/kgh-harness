@@ -63,3 +63,9 @@ preferences:
   # 대상 저장소 git 히스토리에 선택 이력이 섞이는 부작용이 있어, 오타가 그쪽으로
   # 넘어가는 것이 반대 방향보다 놀랍다.
   write_to: { type: enum, values: [global, project], default: global }
+  # as_recommended 해석은 write_to 와 **방향이 반대다**: 명시적 `true` 가 아닌 모든
+  # 값(부재·오타 포함)은 `false` 로 취급한다. 여러 질문을 한꺼번에 건너뛰는 강한
+  # 동작이라, 애매하면 "멈춘다"쪽이 덜 놀랍기 때문이다. 같은 블록 안에서 두 키의
+  # 안전 방향이 다른 것은 원칙이 흔들려서가 아니라 값의 성격이 다르기 때문이다
+  # (플레이북 §1-5).
+  as_recommended: { type: bool, default: false }

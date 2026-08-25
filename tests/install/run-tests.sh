@@ -876,6 +876,55 @@ test_validate_config() {
   else
     fail_case "배포 템플릿 컨피그 → 검증 통과" "exit=$? — $(tail -2 "${dir}/tmpl.log")"
   fi
+
+  # ── preferences.as_recommended (2026-08-25 신설, 국면 C T8) ─────────────
+  # 검증기는 preferences 하위 키를 보지 않으므로 (23)~(25)는 "차단되지 않는다"만
+  # 확인한다 — 값 해석(true 가 아니면 전부 false)은 플레이북·스킬 문서가 소유한다.
+  # 실질적인 RED 는 (26): 스키마·루트·템플릿 셋 다에 키가 실존하는가.
+
+  # (23) as_recommended: true → 통과
+  awk '/^preferences:/{print; print "  as_recommended: true"; next} {print}' \
+    "${REPO_ROOT}/harness.config.yaml" > "${dir}/ar-true.yaml"
+  if "$vc" "${dir}/ar-true.yaml" >"${dir}/ar-true.log" 2>&1; then
+    pass_case "preferences.as_recommended: true → 통과"
+  else
+    fail_case "preferences.as_recommended: true → 통과" "exit=$? — $(tail -2 "${dir}/ar-true.log")"
+  fi
+
+  # (24) as_recommended: false → 통과
+  awk '/^preferences:/{print; print "  as_recommended: false"; next} {print}' \
+    "${REPO_ROOT}/harness.config.yaml" > "${dir}/ar-false.yaml"
+  if "$vc" "${dir}/ar-false.yaml" >"${dir}/ar-false.log" 2>&1; then
+    pass_case "preferences.as_recommended: false → 통과"
+  else
+    fail_case "preferences.as_recommended: false → 통과" "exit=$? — $(tail -2 "${dir}/ar-false.log")"
+  fi
+
+  # (25) as_recommended 오타값 → 구조 검사는 통과 (의도된 한계).
+  #      값 해석은 "true 가 아니면 전부 false" — write_to·bootstrap.prompt 와
+  #      안전 방향이 각각 다르다(플레이북 §1-5).
+  awk '/^preferences:/{print; print "  as_recommended: yess"; next} {print}' \
+    "${REPO_ROOT}/harness.config.yaml" > "${dir}/ar-typo.yaml"
+  if "$vc" "${dir}/ar-typo.yaml" >"${dir}/ar-typo.log" 2>&1; then
+    pass_case "preferences.as_recommended: 오타값도 구조검사는 통과 (의도된 한계)"
+  else
+    fail_case "preferences.as_recommended: 오타값도 구조검사는 통과" "exit=$? — $(tail -2 "${dir}/ar-typo.log")"
+  fi
+
+  # (26) 스키마·루트·템플릿 셋 다에 as_recommended 가 실존한다.
+  #      스키마에만 적고 실사용 파일에 안 넣으면 다음 사람이 문서를 보고 손으로
+  #      적어야 한다 — write_to 때와 같은 계약이다.
+  assert_contains "$(cat "${REPO_ROOT}/config/schema.yaml")" "as_recommended" \
+    "스키마에 preferences.as_recommended 정의 실존"
+  assert_contains "$(cat "${REPO_ROOT}/harness.config.yaml")" "as_recommended" \
+    "루트 컨피그에 preferences.as_recommended 실존"
+  assert_contains "$(cat "${REPO_ROOT}/config/harness.config.template.yaml")" "as_recommended" \
+    "배포 템플릿에 preferences.as_recommended 실존"
+
+  # (27) 배포 템플릿의 as_recommended 는 꺼진 채로 나간다 — 설치하자마자 질문이
+  #      자동으로 건너뛰어지면 새 사용자에게 가장 놀랍다(설계 §3-3 안전측 기본).
+  assert_regex "$(grep -E '^\s*as_recommended:' "${REPO_ROOT}/config/harness.config.template.yaml")" \
+    'as_recommended:[[:space:]]*false' "배포 템플릿의 as_recommended 는 false"
 }
 
 # ---- 플레이북 규칙 실존 계약 (agent-mode T7·T9) -----------------------------
