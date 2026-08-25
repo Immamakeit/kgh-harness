@@ -24,6 +24,8 @@ storage:
 
 bootstrap:                       # 기반 문서 세팅 제안 (set-initial 스킬)
   prompt: ask                    # ask = PRD·CLAUDE·AGENTS 가 없으면 세션 시작 때 제안 | off = 제안 안 함
+                                  # 주의: 이 값은 검증기가 검사하지 않는다 — 오타를 내면 off가
+                                  # 아닌 한 전부 ask로 취급된다(플레이북 §0-1)
 
 stages:
   entry_gate:                    # ① 입구 판단 게이트 — 판단형 요청일 때만
