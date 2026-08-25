@@ -111,6 +111,19 @@ assert_not_contains() {
   esac
 }
 
+# assert_regex <haystack> <ERE 패턴> <설명>
+# 문장 전문 일치도 아니고 단일 키워드 grep도 아닌 "근접·순서" 단언에 쓴다
+# (예: 'single.{0,150}dispatch.{0,80}무시' — 두 단어가 이 순서로 이 거리 안에
+# 같이 나오는지만 본다. 문구가 다듬어져도 순서·근접성만 유지되면 통과한다).
+assert_regex() {
+  local haystack="$1" pattern="$2" desc="$3"
+  if printf '%s' "$haystack" | grep -Eq -- "$pattern"; then
+    pass_case "$desc"
+  else
+    fail_case "$desc" "패턴 불일치: ${pattern}"
+  fi
+}
+
 # ---- 픽스처 헬퍼 ------------------------------------------------------------
 
 # build_fake_source <dir>
@@ -716,6 +729,155 @@ test_validate_config() {
   fi
 }
 
+# ---- 플레이북 규칙 실존 계약 (agent-mode T7·T9) -----------------------------
+# 주의: 이 그룹은 "행동을 검증"하지 않는다 — 플레이북은 LLM이 읽는 프롬프트
+# 문서라 셸로는 그 지침대로 실제로 행동했는지 확인할 수 없다(설계 §4 비대상).
+# 여기서 잡는 것은 딱 하나, **문서 계약**이다: §1-2-1·§3 핵심 문단이 리팩터링
+# 중 통째로 사라지거나, HRN-W016 근거 명시 요구가 빠지는 것. 단언은 "근접·순서"
+# 정도로만 걸어 문구를 다듬어도 깨지지 않게 하되(느슨한 grep agent_mode 하나로는
+# 아무것도 보증 못 함), 문장 전문 일치도 요구하지 않는다(사소한 수정마다 깨짐).
+test_playbook_rule_contracts() {
+  group "플레이북 — 규칙 실존 계약 (문서 계약 단언, 행동 검증 아님)"
+
+  local pb="${REPO_ROOT}/core/playbook.md"
+  assert_present "$pb" "core/playbook.md 실존"
+
+  local flat
+  flat="$(tr '\n' ' ' < "$pb" | tr -s ' ')"
+
+  # §1-2-1: agent_mode 해석 항목이 §1 안에 실존
+  assert_regex "$flat" '2-1\.[^~]{0,60}agent_mode[^~]{0,100}해석' \
+    "§1-2-1: agent_mode 해석 항목 실존"
+
+  # "single이면 dispatch를 무시한다" 취지 (정확한 문장이 아니라 세 키워드의 근접·순서)
+  assert_regex "$flat" 'single[^~]{0,150}dispatch[^~]{0,80}무시' \
+    "'single이면 dispatch 무시' 취지 문장 실존"
+
+  # HRN-W016 코드 자체 + 복구 경로 2개(a)/(b)가 그 코드 근처에 실존
+  assert_contains "$flat" "HRN-W016" "HRN-W016 코드 문구 실존"
+  assert_regex "$flat" 'HRN-W016[^~]{0,400}\(a\)[^~]{0,150}\(b\)' \
+    "HRN-W016 근처 복구 경로 2개 (a)/(b) 실존"
+
+  # §3의 "실효 모드 판정" — 설계 문서가 아닌 이 문서 §3의 정의어. 리뷰어가 이번에
+  # 지적한 번호 겹침(T6)을 해소하며 도입한 표현이라 그대로 고정 문구로 단언한다.
+  assert_contains "$flat" "실효 모드 판정" "§3: '실효 모드 판정' 실존"
+
+  # T9: HRN-W016 판단 근거 명시 요구 — 사전 신호(관찰한 근거)와 사후 신호(거부 응답
+  # 인용)를 각각 요구하는 문장이 해당 항목 근처에 실존하는지 따로 확인한다.
+  assert_regex "$flat" '사전 신호 확인[^~]{0,700}관찰한 근거' \
+    "HRN-W016 사전 신호: 관찰 근거 명시 요구 실존 (T9)"
+  assert_regex "$flat" '시도 후에만 드러나는 실패[^~]{0,700}거부 응답' \
+    "HRN-W016 사후 신호: 거부 응답 인용 요구 실존 (T9)"
+}
+
+# ---- 플레이북 절 참조 정합 (agent-mode T8) ----------------------------------
+# `§x-y` 형태의 문서 내부 참조가 실재하는 절을 가리키는지 파이썬으로 파싱해 대조한다.
+# ⑧ 리뷰어가 지난 회차에 손으로 확인해준 항목 — 손으로 할 일이면 테스트가 할 일이다.
+# 외부 문서 참조(예: "설계 §3-4", "PRD §10")는 대상이 아니다 — § 바로 앞 문맥에
+# 다른 문서 이름이 있으면 내부 참조 검사에서 제외한다.
+check_playbook_cross_refs() {
+  python3 - "$1" <<'PYEOF'
+import re, sys
+
+path = sys.argv[1]
+text = open(path, encoding="utf-8").read()
+lines = text.split("\n")
+
+EXTERNAL_MARKERS = ("설계", "PRD", "구현계획", "계획서")
+
+# 1) 절 헤더 수집: "## N. 제목" / "### N-M. 제목"
+headings = set()
+# 2) 절 내부의 번호 목록 항목 수집: 줄 시작이 "N." 또는 "**N."(굵게 시작)인 항목.
+#    현재 소속 절(직전 "## N." 헤더)에 귀속시킨다 — §1-5, §1-2-1 처럼
+#    "절-항목" 형태 참조를 해소하기 위함.
+items = {}  # section(str) -> set of item numbers(str)
+current_section = None
+
+heading_re = re.compile(r'^#{2,3}\s+(\d+(?:-\d+)?)\.')
+top_heading_re = re.compile(r'^##\s+(\d+)\.')
+item_re = re.compile(r'^\**(\d+(?:-\d+)?)\.\s')
+
+for line in lines:
+    hm = heading_re.match(line)
+    if hm:
+        headings.add(hm.group(1))
+    thm = top_heading_re.match(line)
+    if thm:
+        current_section = thm.group(1)
+        items.setdefault(current_section, set())
+        continue
+    im = item_re.match(line)
+    if im and current_section is not None:
+        items[current_section].add(im.group(1))
+
+# 3) 문서 전체에서 "§X" / "§X-Y" 형태 참조를 위치와 함께 수집, 직전 문맥으로
+#    외부 문서 참조를 걸러낸다.
+ref_re = re.compile(r'§(\d+(?:-\d+)*)')
+broken = []
+checked = 0
+for m in ref_re.finditer(text):
+    start = m.start()
+    context = text[max(0, start - 15):start]
+    if any(marker in context for marker in EXTERNAL_MARKERS):
+        continue  # 다른 문서의 절 참조 — 이 문서 헤더 구조와 무관
+    checked += 1
+    ref = m.group(1)
+    if "-" in ref:
+        section, rest = ref.split("-", 1)
+    else:
+        section, rest = ref, None
+
+    if rest is None:
+        ok = section in headings
+    else:
+        ok = (f"{section}-{rest}" in headings) or (rest in items.get(section, set()))
+
+    if not ok:
+        line_no = text.count("\n", 0, start) + 1
+        broken.append(f"§{ref} (line {line_no}) → 대응하는 절을 찾지 못함")
+
+if broken:
+    print("BROKEN:" + " | ".join(broken))
+    sys.exit(1)
+print(f"OK:{checked}")
+sys.exit(0)
+PYEOF
+}
+
+test_playbook_cross_refs() {
+  group "플레이북 — 절 참조 정합 (§x-y 내부 참조, 다른 문서 참조는 제외)"
+
+  local pb="${REPO_ROOT}/core/playbook.md"
+  local out rc
+  out="$(check_playbook_cross_refs "$pb" 2>&1)"; rc=$?
+
+  if [ "$rc" -eq 0 ]; then
+    pass_case "현재 플레이북의 모든 내부 § 참조가 실재하는 절을 가리킴 (${out})"
+  else
+    fail_case "현재 플레이북의 모든 내부 § 참조가 실재하는 절을 가리킴" "$out"
+  fi
+
+  # 없는 절을 가리키는 참조를 주입하면 FAIL해야 한다 — 파서가 장식이 아님을 증명.
+  local mdir mutated mout mrc
+  mdir="$(mktemp -d "${WORK}/pb-mutate.XXXXXX")"
+  mutated="${mdir}/playbook-mutated.md"
+  cp "$pb" "$mutated"
+  printf '\n없는 절 참조 뮤테이션 테스트: §9-9 를 보라.\n' >> "$mutated"
+  mout="$(check_playbook_cross_refs "$mutated" 2>&1)"; mrc=$?
+  if [ "$mrc" -ne 0 ] && case "$mout" in *"§9-9"*) true ;; *) false ;; esac; then
+    pass_case "없는 절(§9-9) 참조 주입 → FAIL로 검출"
+  else
+    fail_case "없는 절(§9-9) 참조 주입 → FAIL로 검출" "rc=${mrc} out=${mout}"
+  fi
+
+  # 외부 문서 참조("설계 §3-4", "PRD §10")는 이 문서 헤더 구조로 검사하면 안 된다 —
+  # 실제로 존재하는 두 참조가 여전히 통과 대상에서 제외되는지 확인한다.
+  case "$out" in
+    *"3-4"*) fail_case "설계 §3-4는 외부 참조로 제외됨" "출력에 3-4가 섞임: ${out}" ;;
+    *) pass_case "설계 §3-4는 외부 참조로 제외됨 (헤더 구조 검사 대상 아님)" ;;
+  esac
+}
+
 # ---- 번호 선택 입력 (ask-choice) -------------------------------------------
 
 # pty를 붙여 대화형 경로를 실행한다. 입력은 $1, 나머지는 bash 코드.
@@ -984,6 +1146,8 @@ test_harness_cli_missing
 test_superpowers_prereq
 test_join_lines
 test_validate_config
+test_playbook_rule_contracts
+test_playbook_cross_refs
 test_ask_choice
 test_detect_obsidian_vaults
 test_public_distribution
