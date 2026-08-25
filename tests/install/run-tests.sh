@@ -1135,6 +1135,51 @@ sys.exit(0)
 PYEOF
 }
 
+# ---- preference-options ↔ set-initial 통합 계약 (국면 C T10) ----------------
+# 문서 계약 단언이다 — 실제 개인화·자동 채택이 일어나는지는 헤드리스 관찰(T12)이 본다.
+# 여기서 막는 것은 통합의 뼈대가 리팩터링 중 사라지는 것이다: 참조 한 줄, question_id
+# 매핑, 자동 채택 절차, 자유서술 비대상 선언.
+test_preference_integration_contracts() {
+  group "preference-options ↔ set-initial 통합 계약"
+
+  local si="${REPO_ROOT}/skills/set-initial/SKILL.md"
+  local po="${REPO_ROOT}/skills/preference-options/SKILL.md"
+  assert_present "$si" "skills/set-initial/SKILL.md 실존"
+  assert_present "$po" "skills/preference-options/SKILL.md 실존"
+
+  local si_flat
+  si_flat="$(tr '\n' ' ' < "$si" | tr -s ' ')"
+
+  # 참조 한 줄 — 질문을 내기 전에 스킬을 본다
+  assert_regex "$si_flat" 'preference-options[^~]{0,200}(순서|기본번호|추천)' \
+    "set-initial: 질문 전 preference-options 참조 실존"
+
+  # question_id 6종 — 안정 식별자가 없으면 통계가 표시 문구에 묶여 학습이 끊긴다
+  local qid
+  for qid in commit_format commit_unit branch_strategy boilerplate feature_scope docs_location; do
+    assert_contains "$si_flat" "set-initial.${qid}" \
+      "set-initial: question_id 'set-initial.${qid}' 실존"
+  done
+
+  # as_recommended 자동 채택 절차 — 표로 모아 + 되돌리기.
+  # 간격 800: 이 스킬의 예시 표는 6문항이라 표 자체가 500자를 넘는다. 플레이북(2문항
+  # 예시)에 쓴 300으로는 예시 표가 커졌다는 이유만으로 죽는다 — 단언의 취지는
+  # "같은 절 안에 표 절차와 되돌리기 안내가 함께 있다"이지 두 문구의 물리적 거리가
+  # 아니므로, 취지를 유지한 채 간격만 넓힌다.
+  assert_regex "$si_flat" 'as_recommended[^~]{0,600}표[^~]{0,800}다시' \
+    "set-initial: as_recommended 표 절차 + 되돌리기 안내 실존"
+
+  # 자유서술 2문항은 자동 채택 대상이 아니다 (원래 질문 계약의 예외 2문항과 같은 것)
+  assert_regex "$si_flat" '자유 ?서술[^~]{0,300}(자동 채택|대상이 아니)' \
+    "set-initial: 자유서술 문항은 자동 채택 대상 아님 명시"
+
+  # 회귀 방지 — 질문 계약 4요소 문구가 그대로 살아 있어야 한다
+  assert_regex "$si_flat" '네 가지를 전부' "set-initial: 질문 계약 4요소 문구 유지"
+  assert_regex "$si_flat" '직접 입력' "set-initial: '직접 입력' 요소 유지"
+  assert_regex "$si_flat" '건너뛰기' "set-initial: '건너뛰기' 요소 유지"
+  assert_regex "$si_flat" '\[기본:' "set-initial: 기본번호 표기 유지"
+}
+
 test_playbook_cross_refs() {
   group "플레이북 — 절 참조 정합 (§x-y 내부 참조, 다른 문서 참조는 제외)"
 
@@ -1440,6 +1485,7 @@ test_join_lines
 test_validate_config
 test_playbook_rule_contracts
 test_question_label_contracts
+test_preference_integration_contracts
 test_playbook_cross_refs
 test_ask_choice
 test_detect_obsidian_vaults

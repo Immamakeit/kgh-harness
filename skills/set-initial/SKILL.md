@@ -59,6 +59,10 @@ description: Use when a project needs its foundation documents set up or replace
 
 ## 질문 계약 (이 스킬의 규율)
 
+**번호 선택형 질문을 내기 전에 `skills/preference-options/SKILL.md` 를 참조한다** —
+옵션 **순서** · **기본번호** · `(추천)` 표시를 그 사람의 선호 프로필 기준으로 정한다
+(플레이북 §6-1). 아래 네 요소의 틀 자체는 바뀌지 않는다 — 그 **안에서만** 조정한다.
+
 모든 질문은 **네 가지를 전부** 갖춘다. 하나라도 빠지면 위반이다.
 
 1. **번호** 선택지 — 최대 4개, 우선순위 순
@@ -86,6 +90,54 @@ Q1. 커밋 메시지 형식
 
 셸에서 물을 일이 생기면 `install/lib.sh` 의 `ask_choice` 를 쓴다 — 비대화형 폴백과
 재질문이 이미 들어 있다.
+
+### 질문 ID (`preference-options` 입력 계약)
+
+선호 프로필은 **표시 문구가 아니라 안정 식별자**로 통계를 쌓는다 — 라벨 텍스트로
+매칭하면 문구를 다듬을 때마다 학습이 끊긴다. 이 스킬이 내는 질문의 ID는 아래로 고정한다.
+**문구를 바꿔도 ID는 바꾸지 않는다.**
+
+| 질문 | `question_id` | `option_id` |
+|---|---|---|
+| 3단계 Q1 커밋 메시지 형식 | `set-initial.commit_format` | `bracket-type` / `conventional-commits` / `custom` / `skip` |
+| 3단계 Q2 커밋 단위 | `set-initial.commit_unit` | `per-file-change` / `per-feature` / `custom` / `skip` |
+| 3단계 Q3 브랜치 | `set-initial.branch_strategy` | `direct-main` / `feature-branch-pr` / `custom` / `skip` |
+| 3단계 Q4 보일러플레이트 | `set-initial.boilerplate` | `forbid` / `allow` / `custom` / `skip` |
+| 3단계 Q5 기능 개발 범위 | `set-initial.feature_scope` | `just-this-feature` / `design-for-growth` / `custom` / `skip` |
+| 3단계 Q6 문서 위치 | `set-initial.docs_location` | `docs-dir` / `repo-wiki` / `custom` / `skip` |
+
+`custom`("직접 입력")은 **추천 후보에서 항상 제외**하고, 입력한 텍스트 **원문은 기록하지
+않는다** — 골랐다는 빈도만 센다. 0단계·1단계 질문에는 ID를 붙이지 않는다(아래 참조).
+
+### `as_recommended: true` 일 때 — 3단계를 표 하나로
+
+`preferences.as_recommended` 가 켜져 있으면 3단계 6문항을 **하나씩 묻지 않고 표 하나로
+모아 보여준 뒤 자동 진행**한다(플레이북 §6-1). 근거 없는 자동 채택은 없다.
+
+```
+[as-recommended] 3단계 작업 규칙을 추천대로 자동 선택했습니다.
+| 질문 | 선택 | 근거 |
+|---|---|---|
+| Q1 커밋 메시지 형식 | 2) Conventional Commits | 이력 6회 중 5회 |
+| Q2 커밋 단위 | 1) 파일 변경마다 | 이력 부족 — 스킬 기본값 |
+| Q3 브랜치 | 1) 기능 브랜치 → PR | 이력 8회 중 7회 |
+| Q4 보일러플레이트 | 1) 금지 | 이력 부족 — 스킬 기본값 |
+| Q5 기능 개발 범위 | 1) 지금 그 기능을 제대로 | 이력 부족 — 스킬 기본값 |
+| Q6 문서 위치 | 1) docs/ | 이력 4회 중 3회 |
+되돌리려면 "Q1 다시"처럼 말씀하시면 그 항목만 다시 묻습니다.
+```
+
+**자동 채택하지 않는 것 (이 스킬 범위):**
+
+- **1단계의 자유 서술 2문항**("무엇을 만듭니까?" · "지금 없어서 불편한 게 뭡니까?") —
+  선택지가 없어 추천할 옵션 자체가 없다. `as_recommended` 값과 무관하게 **자동 채택
+  대상이 아니며** 그대로 대화형으로 묻는다. (1단계 "누가 씁니까?"는 선택지가 있으므로
+  개인화 대상이지만, 프로젝트마다 답이 달라 이력이 쌓여도 의미가 옅다 — 통계가
+  임계값을 넘지 못하면 평소대로 스킬 기본값이 나간다.)
+- **0단계의 기존 문서 처리**는 자동 채택 **대상이다.** 되돌릴 길(git 청결 확인 · `.bak`)을
+  이 스킬이 **게이트와 무관하게 항상 먼저** 확보하기 때문이다(플레이북 §6-1의 제외
+  원칙은 "되돌릴 길이 미치지 않는" 동작만 겨냥한다). 그 확보 절차 자체는 어떤 경우에도
+  생략하지 않는다.
 
 ## 1단계 — 무엇을·왜 (PRD 씨앗)
 
