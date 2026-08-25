@@ -398,6 +398,78 @@ test_update_contract() {
 }
 
 # ============================================================================
+# 3b. 컨피그 검증기 실행불가 (HRN-W020)
+# ============================================================================
+test_validator_unavailable() {
+  group "컨피그 검증기 실행불가 — HRN-W020"
+
+  # (1) 회귀 방지: 검증기 파일 자체가 없으면 setup의 기존 메시지 그대로.
+  #     build_fake_source는 install/{lib.sh,setup,update}만 두고 validate-config를
+  #     두지 않으므로, 이 경로는 항상 "검증기 없음"이어야 한다.
+  local src1 target1 out1
+  src1="$(mktemp -d "${WORK}/w020-src1.XXXXXX")"
+  build_fake_source "$src1"
+  target1="$(mktemp -d "${WORK}/w020-target1.XXXXXX")"
+  out1="$(cd "$src1" && ./install/setup "$target1" </dev/null 2>&1)"
+  assert_contains "$out1" "건너뜀 (검증기 없음 — install/update로 최신본을 받으세요)" \
+    "검증기 파일 부재 — setup 기존 메시지 유지(회귀 없음)"
+  assert_not_contains "$out1" "HRN-W020" "검증기 파일 부재 시 W020 오발화 없음(setup)"
+
+  # (2)(3) 검증기 파일은 있으나 실행 비트가 없음 → HRN-W020, rc=0 (setup·update 둘 다)
+  # root 함정: access()/execve() 둘 다 실행 비트가 하나도 없는 파일은 root라도 거부한다
+  # (capabilities(7): CAP_DAC_OVERRIDE도 "적어도 하나의 x비트 존재"를 전제한다)는 것이
+  # 알려진 커널 동작이지만, 이 실행 환경에서 실측하지 않은 채 단정하지는 않는다 —
+  # test_hook_doc_state의 선례를 따라 root면 건너뛰고 사유를 pass 메시지에 남긴다.
+  if [ "$(id -u)" = "0" ]; then
+    pass_case "검증기 실행 비트 없음 → W020 (root 실행 — 권한 검사 신뢰 불가, 건너뜀)"
+  else
+    local src2 target2 out2 rc2
+    src2="$(mktemp -d "${WORK}/w020-src2.XXXXXX")"
+    build_fake_source "$src2"
+    printf '#!/usr/bin/env bash\nexit 0\n' > "${src2}/install/validate-config"
+    chmod 644 "${src2}/install/validate-config"
+    git -C "$src2" -c user.email=test@test.local -c user.name=test add -A
+    git -C "$src2" -c user.email=test@test.local -c user.name=test commit -q \
+      -m "add non-exec validate-config"
+
+    target2="$(mktemp -d "${WORK}/w020-target2.XXXXXX")"
+    out2="$(cd "$src2" && ./install/setup "$target2" </dev/null 2>&1)"; rc2=$?
+    assert_eq "$rc2" "0" "검증기 실행 비트 없음 — setup은 rc=0으로 완주(비차단)"
+    assert_contains "$out2" "HRN-W020" "검증기 실행 비트 없음 → HRN-W020 출력(setup)"
+    assert_contains "$out2" "건너뜀 (검증기 실행 불가 — 위 HRN-W020 참조)" \
+      "종료 요약 문구가 '검증기 없음'과 구분됨(setup)"
+    local out2_flat
+    out2_flat="$(tr '\n' ' ' <<< "$out2")"
+    assert_regex "$out2_flat" 'HRN-W020[^~]{0,300}chmod \+x' \
+      "HRN-W020 복구경로 1: chmod +x 안내 실존"
+    assert_regex "$out2_flat" 'HRN-W020[^~]{0,400}검증 없이 진행' \
+      "HRN-W020 복구경로 2: 검증 없이 진행 안내 실존"
+
+    # update 경로 — 재복사 후에도 같은 비실행 파일이 유지되어 W020이 재현되는지
+    local out3 rc3
+    out3="$("${target2}/.harness/install/update" </dev/null 2>&1)"; rc3=$?
+    assert_eq "$rc3" "0" "검증기 실행 비트 없음 — update도 rc=0으로 완주(비차단)"
+    assert_contains "$out3" "HRN-W020" "검증기 실행 비트 없음 → HRN-W020 출력(update)"
+    assert_contains "$out3" "건너뜀 (검증기 실행 불가 — 위 HRN-W020 참조)" \
+      "종료 요약 문구가 '검증기 없음'과 구분됨(update)"
+  fi
+
+  # (4) 회귀 방지: 검증기 파일 자체가 없으면 update의 기존 메시지도 그대로.
+  local src4 target4 out4
+  src4="$(mktemp -d "${WORK}/w020-src4.XXXXXX")"
+  build_fake_source "$src4"
+  target4="$(mktemp -d "${WORK}/w020-target4.XXXXXX")"
+  ( cd "$src4" && ./install/setup "$target4" </dev/null >/dev/null 2>&1 )
+  echo "dummy adapter v2" > "${src4}/adapters/marker.txt"
+  git -C "$src4" -c user.email=test@test.local -c user.name=test add -A
+  git -C "$src4" -c user.email=test@test.local -c user.name=test commit -q -m "bump marker"
+  out4="$("${target4}/.harness/install/update" </dev/null 2>&1)"
+  assert_contains "$out4" "건너뜀 (검증기 없음 — 소스가 오래됐을 수 있음)" \
+    "검증기 파일 부재 — update 기존 메시지 유지(회귀 없음)"
+  assert_not_contains "$out4" "HRN-W020" "검증기 파일 부재 시 W020 오발화 없음(update)"
+}
+
+# ============================================================================
 # 4. 예외 케이스
 # ============================================================================
 test_meta_corruption() {
@@ -768,6 +840,16 @@ test_playbook_rule_contracts() {
     "HRN-W016 사전 신호: 관찰 근거 명시 요구 실존 (T9)"
   assert_regex "$flat" '시도 후에만 드러나는 실패[^~]{0,700}거부 응답' \
     "HRN-W016 사후 신호: 거부 응답 인용 요구 실존 (T9)"
+
+  # validator-unavailable (2026-08-25): 검증기가 있는데 실행 불가한 경우의 분기.
+  # HRN-E005("검증기가 없으면")와 나란히, HRN-W020("있는데 실행되지 않으면")이
+  # 실존해야 한다 — 이 칸이 빠져 있던 것이 agent-mode 관찰에서 드러난 결함의 근본
+  # 원인이었다(HRN-W015를 잘못 골라 씀).
+  assert_contains "$flat" "HRN-W020" "HRN-W020 코드 문구 실존"
+  assert_regex "$flat" 'HRN-E005[^~]{0,60}install/update[^~]{0,80}실행되지 않으면[^~]{0,150}HRN-W020' \
+    "검증기 '없음(E005)'과 '있으나 실행 불가(W020)' 분기가 나란히 실존"
+  assert_regex "$flat" 'HRN-W020[^~]{0,80}흐름은 계속한다' \
+    "HRN-W020: 비차단 취지 실존"
 }
 
 # ---- 플레이북 절 참조 정합 (agent-mode T8) ----------------------------------
@@ -1140,6 +1222,7 @@ test_hook_doc_state() {
 test_rsync_contract
 test_setup_contract
 test_update_contract
+test_validator_unavailable
 test_meta_corruption
 test_rsync_missing
 test_harness_cli_missing
