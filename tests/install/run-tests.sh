@@ -675,6 +675,45 @@ test_validate_config() {
   "${fakesrc}/install/validate-config" "${dir}/harness.config.yaml" >"${dir}/badschema.log" 2>&1
   assert_not_contains "$(cat "${dir}/badschema.log")" "Traceback" "손상 스키마 → Traceback 미노출"
   assert_contains "$(cat "${dir}/badschema.log")" "HRN-E005" "손상 스키마 → HRN-E005"
+
+  # ── agent_mode (2026-08-25 신설) ──────────────────────────────────────
+  # (14) agent_mode 없는 구버전 컨피그 → 그대로 통과 (하위호환, 설계 §3-6)
+  #      원본 harness.config.yaml 자체가 이미 agent_mode 미보유 상태이므로 (1)과 같은
+  #      픽스처를 재사용해도 되지만, 의도를 분명히 하기 위해 별도 케이스로 남긴다.
+  if "$vc" "${dir}/harness.config.yaml" >"${dir}/am-none.log" 2>&1; then
+    pass_case "agent_mode 없는 구버전 컨피그 → 통과 (하위호환)"
+  else
+    fail_case "agent_mode 없는 구버전 컨피그 → 통과" "exit=$? — $(tail -2 "${dir}/am-none.log")"
+  fi
+
+  # (15) agent_mode: single → 통과
+  { cat "${REPO_ROOT}/harness.config.yaml"; printf 'agent_mode: single\n'; } \
+    > "${dir}/am-single.yaml"
+  if "$vc" "${dir}/am-single.yaml" >"${dir}/am-single.log" 2>&1; then
+    pass_case "agent_mode: single → 통과"
+  else
+    fail_case "agent_mode: single → 통과" "exit=$? — $(tail -2 "${dir}/am-single.log")"
+  fi
+
+  # (16) agent_mode: multi → 통과
+  { cat "${REPO_ROOT}/harness.config.yaml"; printf 'agent_mode: multi\n'; } \
+    > "${dir}/am-multi.yaml"
+  if "$vc" "${dir}/am-multi.yaml" >"${dir}/am-multi.log" 2>&1; then
+    pass_case "agent_mode: multi → 통과"
+  else
+    fail_case "agent_mode: multi → 통과" "exit=$? — $(tail -2 "${dir}/am-multi.log")"
+  fi
+
+  # (17) agent_mode: 오타값 → 구조 검사는 여전히 통과 (설계 §3-3의 의도된 한계 —
+  #      top_level 스칼라 값은 검증기가 검사하지 않는다. 여기서 비-PASS가 나오면
+  #      오히려 그 한계가 깨졌다는 뜻이므로 먼저 원인을 규명해야 한다)
+  { cat "${REPO_ROOT}/harness.config.yaml"; printf 'agent_mode: bogus\n'; } \
+    > "${dir}/am-typo.yaml"
+  if "$vc" "${dir}/am-typo.yaml" >"${dir}/am-typo.log" 2>&1; then
+    pass_case "agent_mode: 오타값도 구조검사는 통과 (설계 §3-3 의도된 한계)"
+  else
+    fail_case "agent_mode: 오타값도 구조검사는 통과" "exit=$? — $(tail -2 "${dir}/am-typo.log")"
+  fi
 }
 
 # ---- 번호 선택 입력 (ask-choice) -------------------------------------------
