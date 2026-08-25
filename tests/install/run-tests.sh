@@ -861,6 +861,52 @@ test_public_distribution() {
     "README에 에이전트용 설치 명령 존재"
 }
 
+
+# ============================================================================
+# 13. 훅 — 기반 문서 상태 보고 (set-initial 방아쇠)
+# ============================================================================
+test_hook_doc_state() {
+  group "훅 — 기반 문서 상태"
+
+  local hook="${REPO_ROOT}/adapters/claude/hooks/session-start.sh"
+
+  # (1) 셋 다 없음
+  local d1 out1
+  d1="$(mktemp -d "${WORK}/hook-none.XXXXXX")"
+  out1="$(CLAUDE_PROJECT_DIR="$d1" bash "$hook" 2>&1)"
+  assert_contains "$out1" "PRD.md: 없음 · CLAUDE.md: 없음 · AGENTS.md: 없음" \
+    "문서 셋 다 없으면 셋 다 '없음'"
+
+  # (2) 일부만 있음
+  local d2 out2
+  d2="$(mktemp -d "${WORK}/hook-some.XXXXXX")"
+  printf '# 규칙\n- 뭔가 있다\n' > "${d2}/CLAUDE.md"
+  out2="$(CLAUDE_PROJECT_DIR="$d2" bash "$hook" 2>&1)"
+  assert_contains "$out2" "PRD.md: 없음 · CLAUDE.md: 있음 · AGENTS.md: 없음" \
+    "내용 있는 파일만 '있음'"
+
+  # (3) 공백뿐인 파일은 '없음' — [ -s ] 로는 못 거르는 경계
+  local d3 out3
+  d3="$(mktemp -d "${WORK}/hook-blank.XXXXXX")"
+  printf '\n   \n\t\n' > "${d3}/CLAUDE.md"
+  : > "${d3}/PRD.md"
+  out3="$(CLAUDE_PROJECT_DIR="$d3" bash "$hook" 2>&1)"
+  assert_contains "$out3" "PRD.md: 없음 · CLAUDE.md: 없음 · AGENTS.md: 없음" \
+    "공백뿐인 파일도 '없음'으로 본다"
+
+  # (4) 훅은 어떤 경우에도 성공 종료 — 세션을 막지 않는다
+  local rc4
+  CLAUDE_PROJECT_DIR="$d1" bash "$hook" >/dev/null 2>&1; rc4=$?
+  assert_eq "$rc4" "0" "훅은 문서가 없어도 rc=0"
+
+  # (5) 훅은 판단하지 않는다 — 제안 문구는 플레이북 소관
+  assert_not_contains "$out1" "set-initial 을 실행" \
+    "훅이 스킬 실행을 직접 지시하지 않음 (사실만 보고)"
+
+  # (6) 스킬이 배포물에 실린다
+  assert_present "${REPO_ROOT}/skills/set-initial/SKILL.md" "set-initial 스킬 실존"
+}
+
 # ============================================================================
 # 실행
 # ============================================================================
@@ -876,6 +922,7 @@ test_validate_config
 test_ask_choice
 test_detect_obsidian_vaults
 test_public_distribution
+test_hook_doc_state
 
 printf '\n=== 요약 ===\n'
 printf 'PASS: %d  FAIL: %d\n' "$PASS" "$FAIL"

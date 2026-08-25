@@ -20,6 +20,16 @@ done
 PROJECT_DIR="${CLAUDE_PROJECT_DIR:-$PWD}"
 CONFIG="$PROJECT_DIR/harness.config.yaml"
 
+# 기반 문서 유무 — 사실만 보고한다. 제안 여부·문구는 플레이북이 정한다.
+# "없음" = 파일이 없거나 공백뿐. 내용의 품질은 판정하지 않는다(오검출 방지).
+doc_state() {
+  if [ -f "$1" ] && grep -q '[^[:space:]]' "$1" 2>/dev/null; then
+    printf '있음'
+  else
+    printf '없음'
+  fi
+}
+
 echo "<harness-orchestrator>"
 
 if [ -z "$PLAYBOOK" ]; then
@@ -28,6 +38,12 @@ if [ -z "$PLAYBOOK" ]; then
   echo "이번 세션은 하네스 흐름 없이 진행하되, 사용자에게 위 사실을 첫 응답에서 알리십시오."
 else
   cat "$PLAYBOOK"
+  echo
+  echo "## 프로젝트 기반 문서 상태"
+  printf 'PRD.md: %s · CLAUDE.md: %s · AGENTS.md: %s\n' \
+    "$(doc_state "$PROJECT_DIR/PRD.md")" \
+    "$(doc_state "$PROJECT_DIR/CLAUDE.md")" \
+    "$(doc_state "$PROJECT_DIR/AGENTS.md")"
   echo
   if [ -f "$CONFIG" ]; then
     echo "## 프로젝트 컨피그 (harness.config.yaml 원문 — 흐름 시작 시 파일을 다시 읽을 것)"
