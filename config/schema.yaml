@@ -9,6 +9,7 @@ top_level:
   workdocs:       { type: map,    required: false }
   storage:        { type: map,    required: false }
   stages:         { type: map,    required: false }
+  bootstrap:      { type: map,    required: false }
 
 defaults:
   model:  { type: string, default: sonnet, validated_by: adapter }
@@ -36,3 +37,8 @@ stages:
     enabled:  { type: enum, values: ["true", "false", conditional] }
     dispatch: { type: bool }
     loop:     { type: enum, values: [auto, manual] }
+
+bootstrap:
+  # 기반 문서(PRD·CLAUDE·AGENTS) 세팅 제안. set-initial 스킬이 소유한다.
+  # 하위 키 검증은 defaults·storage 와 같은 수준(구조만) 이다.
+  prompt: { type: enum, values: [ask, off], default: ask }

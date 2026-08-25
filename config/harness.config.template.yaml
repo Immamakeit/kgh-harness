@@ -22,6 +22,9 @@ storage:
   docs: [설계, 구현계획, 구현후보고]
   approval: auto                 # auto = 판정 통과 시 자동 저장 | required = 저장 직전 확인
 
+bootstrap:                       # 기반 문서 세팅 제안 (set-initial 스킬)
+  prompt: ask                    # ask = PRD·CLAUDE·AGENTS 가 없으면 세션 시작 때 제안 | off = 제안 안 함
+
 stages:
   entry_gate:                    # ① 입구 판단 게이트 — 판단형 요청일 때만
     enabled: conditional
