@@ -888,6 +888,14 @@ test_question_label_contracts() {
     "set-initial 질문 계약: '번호는 표시 순서와 일치' 상속 실존"
   assert_regex "$bs_flat" '번호는[^~]{0,20}표시 순서[^~]{0,20}일치' \
     "branch-strategy 질문 계약: '번호는 표시 순서와 일치' 상속 실존"
+
+  # plan-doc 범위 게이트 — 사용자가 고르는 선택지이므로 번호여야 한다
+  local pd_flat
+  pd_flat="$(tr '\n' ' ' < "${REPO_ROOT}/skills/plan-doc/SKILL.md")"
+  assert_regex "$pd_flat" '비대상입니다[^~]{0,80}1\)[^~]{0,80}2\)' \
+    "plan-doc 범위 게이트 선택지가 번호(1)/2))로 제시됨"
+  assert_not_contains "$pd_flat" "**(a) 설계 수정" \
+    "plan-doc 범위 게이트에 알파벳 라벨 잔여 없음"
 }
 
 # ---- 플레이북 절 참조 정합 (agent-mode T8) ----------------------------------
