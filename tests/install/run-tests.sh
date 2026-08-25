@@ -1178,6 +1178,34 @@ test_preference_integration_contracts() {
   assert_regex "$si_flat" '직접 입력' "set-initial: '직접 입력' 요소 유지"
   assert_regex "$si_flat" '건너뛰기' "set-initial: '건너뛰기' 요소 유지"
   assert_regex "$si_flat" '\[기본:' "set-initial: 기본번호 표기 유지"
+
+  # ── 문서화 계약 (국면 C T11) ───────────────────────────────────────────
+  # README 설정 표는 사용자가 컨피그를 알아보는 유일한 산문 안내다 — 여기 없는 키는
+  # 실질적으로 존재하지 않는 키다. PRD §8 의 (예정) 표기는 구현이 끝나면 떼는 것이
+  # 이 저장소의 계약이다(PRD:172, validator-unavailable·branch-strategy 선례).
+  local rd="${REPO_ROOT}/README.md" prd="${REPO_ROOT}/PRD.md"
+  assert_present "$rd" "README.md 실존"
+  assert_present "$prd" "PRD.md 실존"
+
+  local rd_flat prd_flat
+  rd_flat="$(tr '\n' ' ' < "$rd" | tr -s ' ')"
+  prd_flat="$(tr '\n' ' ' < "$prd" | tr -s ' ')"
+
+  local key
+  for key in "agent_mode" "preferences.write_to" "preferences.as_recommended"; do
+    assert_contains "$rd_flat" "$key" "README 설정 표에 '${key}' 실존"
+  done
+
+  # (예정) 표기 제거 — 코드가 실제로 구현됐는데 문서가 '예정'이라 적혀 있으면 거짓이다
+  assert_regex "$prd_flat" 'HRN-W017[^|]{0,40}\|' "PRD: HRN-W017 행 실존"
+  case "$prd_flat" in
+    *'HRN-W017` *(예정'*) fail_case "PRD: HRN-W017 의 (예정) 표기 제거됨" "아직 (예정)이 붙어 있음" ;;
+    *) pass_case "PRD: HRN-W017 의 (예정) 표기 제거됨" ;;
+  esac
+  case "$prd_flat" in
+    *'HRN-W018` *(예정'*) fail_case "PRD: HRN-W018 의 (예정) 표기 제거됨" "아직 (예정)이 붙어 있음" ;;
+    *) pass_case "PRD: HRN-W018 의 (예정) 표기 제거됨" ;;
+  esac
 }
 
 test_playbook_cross_refs() {

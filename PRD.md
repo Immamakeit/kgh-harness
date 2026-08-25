@@ -195,8 +195,8 @@ Claude/Codex의 모델명·규격은 변할 수 있다. 흐름 시작 시 Resolv
 | `HRN-W014` | superpowers 플러그인 미발견 (경고, 비차단) | 플러그인 설치 또는 컨피그에서 제거 |
 | `HRN-W015` | 검증 전제(python3·PyYAML) 미충족으로 컨피그 검증 건너뜀 (경고, 비차단) | python3/PyYAML 설치 후 재실행 |
 | `HRN-W016` | 서브에이전트 디스패치 불가(사전/사후 신호) — 싱글 모드로 열화 (경고, 비차단) | 세션 지침에서 서브에이전트 허용 후 재시도 또는 그대로 진행 |
-| `HRN-W017` *(예정 — preference-options)* | 선호 프로필 파일 손상/파싱 실패 (비차단 — 프로필 없이 스킬 기본값으로 진행) | (a) `~/.claude/harness/preferences.yaml`을 고치거나 삭제(다음 접근 시 재생성) (b) `preferences.as_recommended`를 꺼서 추천 계층 자체를 우회 |
-| `HRN-W018` *(예정 — preference-options)* | 선호 프로필 쓰기 실패, 권한 등 (비차단 — 이번 선택은 학습에 반영 안 됨, 진행은 계속) | (a) `~/.claude/harness/` 권한 확인 (b) `CLAUDE_CONFIG_DIR`로 쓰기 가능한 경로 지정 |
+| `HRN-W017` | 선호 프로필 파일 손상/파싱 실패 (비차단 — 프로필 없이 스킬 기본값으로 진행) | (a) `~/.claude/harness/preferences.yaml`을 고치거나 삭제(다음 접근 시 재생성) (b) `preferences.as_recommended`를 꺼서 추천 계층 자체를 우회 |
+| `HRN-W018` | 선호 프로필 쓰기 실패, 권한 등 (비차단 — 이번 선택은 학습에 반영 안 됨, 진행은 계속) | (a) `~/.claude/harness/` 권한 확인 (b) `CLAUDE_CONFIG_DIR`로 쓰기 가능한 경로 지정 |
 | `HRN-W019` | 브랜치 보호 설정 일부만 적용 성공 (경고, 비차단) | 실패 항목 수동 설정 또는 재실행 |
 | `HRN-W020` | 컨피그 검증기 파일은 존재하나 실행 불가 (경고, 비차단) | 실행 권한 부여(chmod +x) 또는 해당 명령 실행 허용 후 재검증, 또는 검증 없이 진행 |
 

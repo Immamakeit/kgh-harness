@@ -155,10 +155,20 @@ rm -rf ~/dev/내프로젝트/.harness ~/dev/내프로젝트/harness.config.yaml
 | `workdocs.path` | 작업 문서 위치 (기본 `.harness/work`) |
 | `storage.vault_root` | Obsidian vault 절대경로. `null`이면 저장하지 않는다 |
 | `bootstrap.prompt` | `ask` 면 문서가 없을 때 초기 세팅을 제안한다. `off` 면 안 묻는다 |
+| `agent_mode` | `multi`(기본)면 일부 구간을 서브에이전트로 돌린다. `single`이면 전부 메인 세션에서 한다 |
+| `preferences.write_to` | 선택 이력을 어디에 쌓을지. `global`(기본)은 `~/.claude/harness/`, `project`는 `<프로젝트>/.harness/` |
+| `preferences.as_recommended` | `true`면 번호 선택형 질문을 추천대로 자동 채택하고 무엇을 왜 골랐는지 표로 남긴다. 기본은 `false` |
 | `stages.<구간>.gate` | `required`면 사용자 승인까지 멈춘다 |
 | `stages.<구간>.skills` | 그 구간에서 쓸 스킬 |
 
 고친 뒤에는 `.harness/install/validate-config`로 검증한다.
+
+> **모르는 값을 만나면 어떻게 되나** — 검증기는 위 세 키의 *값*까지는 검사하지 않는다.
+> 오타를 냈을 때 어느 쪽으로 떨어지는지는 키마다 다르고, 기준은 하나다: **덜 놀라운 쪽.**
+> `agent_mode`는 `single`이 아니면 `multi`(하던 대로), `bootstrap.prompt`는 `off`가
+> 아니면 `ask`(한 번 더 묻는다), `preferences.write_to`는 `project`가 아니면
+> `global`(남의 git 히스토리에 이력을 흘리지 않는다), `preferences.as_recommended`는
+> `true`가 아니면 `false`(질문을 건너뛰지 않는다).
 
 ## 에러 코드
 
