@@ -62,6 +62,33 @@ cd ~/dev/내프로젝트
 이 프로젝트에서 Claude Code를 새로 시작하면 첫 컨텍스트에 워크플로가 실려 있다.
 그다음은 평소처럼 작업을 지시하면 된다.
 
+## 초기 세팅
+
+`PRD.md`·`CLAUDE.md`·`AGENTS.md` 가 없으면 세션 시작 때 하네스가 먼저 묻는다.
+"지금 한다"를 고르면 질문에 답하는 것만으로 세 문서가 만들어진다.
+
+1. 무엇을 · 왜 (3문항) → 2. 스택 고르기 → 3. 작업 규칙 (6문항)
+
+- 모든 질문에 기본값이 있다. Enter로 넘기면 기본값으로 간다.
+- 마음에 드는 선택지가 없으면 **직접 입력**, 안 정하고 싶으면 **건너뛰기** 를 고른다.
+- 이미 문서가 있으면 목록을 보여주고 어떻게 할지 묻는다. 덮어쓰기 전에 백업한다.
+- 문서만 만든다. 설치·초기화는 하지 않는다.
+
+아무 때나 다시 부를 수 있다. 이미 있는 문서를 갈아엎을 때도 이 길로 간다.
+
+```
+초기 세팅 해줘
+```
+
+매번 묻는 게 싫으면 `harness.config.yaml` 에서 끈다.
+
+```yaml
+bootstrap:
+  prompt: off
+```
+
+에이전트는 `.harness/skills/set-initial/SKILL.md` 를 읽고 그대로 따르면 된다.
+
 ## 설치되는 것
 
 ```
@@ -71,7 +98,7 @@ cd ~/dev/내프로젝트
 └─ .harness/
    ├─ core/playbook.md        # 세션에 주입되는 워크플로 본문
    ├─ adapters/claude/        # Claude Code 어댑터
-   ├─ skills/                 # 하네스 스킬 7종
+   ├─ skills/                 # 하네스 스킬 8종
    ├─ templates/              # 문서 서식 3종
    ├─ config/schema.yaml      # 컨피그 스키마
    ├─ install/                # setup · update · validate-config
@@ -106,6 +133,7 @@ rm -rf ~/dev/내프로젝트/.harness ~/dev/내프로젝트/harness.config.yaml
 | `defaults.model` | 구간이 모델을 안 정했을 때 쓸 값 |
 | `workdocs.path` | 작업 문서 위치 (기본 `.harness/work`) |
 | `storage.vault_root` | Obsidian vault 절대경로. `null`이면 저장하지 않는다 |
+| `bootstrap.prompt` | `ask` 면 문서가 없을 때 초기 세팅을 제안한다. `off` 면 안 묻는다 |
 | `stages.<구간>.gate` | `required`면 사용자 승인까지 멈춘다 |
 | `stages.<구간>.skills` | 그 구간에서 쓸 스킬 |
 

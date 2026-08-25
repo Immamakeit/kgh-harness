@@ -400,5 +400,6 @@ if [ "$CONFIG_CREATED" -eq 1 ] && [ -z "$VAULT_ROOT" ]; then
   say "  - harness.config.yaml의 storage.vault_root 지정 (미지정 시 HRN-W010이 매 실행 안내됩니다)"
 fi
 say "  - ${TARGET_DIR}에서 Claude Code 세션을 시작하면 SessionStart 훅으로 플레이북이 로드됩니다"
+say "  - PRD.md·CLAUDE.md·AGENTS.md가 없으면 그 세션에서 초기 세팅을 제안합니다 (set-initial)"
 say "  - 다음 업데이트: ${HARNESS_DIR}/install/update"
 ok "설치 완료"

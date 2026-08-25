@@ -38,7 +38,9 @@ AI 코딩 하네스(Claude Code, 추후 Codex)에 설치하는 **개발 워크�
 ## 3. v1 범위
 
 **포함:** Claude Code 어댑터 · 컨피그 로더/리졸버 · 오케스트레이터 지침 · SessionStart 훅 ·
-내 스킬 번들(6종 신규 제작) + superpowers 전제 · 대화형 설치 스크립트 ·
+내 스킬 번들(7종 신규 제작 — cost-bottleneck-check·design-doc·plan-doc·report-doc·
+obsidian-cli·interactive-script·scope-splitter, + 기반 문서 세팅 set-initial) +
+superpowers 전제 · 대화형 설치 스크립트 ·
 9단계 워크플로 + 게이트.
 
 **제외(추후, §10):** Codex 어댑터 구현 · **Ollama(로컬 모델) 어댑터**(Codex 적용 이후 착수) ·
@@ -84,7 +86,7 @@ kgh-dev-harness/                (공개 원격: kgh-harness)
 ├─ adapters/
 │  ├─ claude/                 # v1
 │  └─ codex/                  # 스텁 (추후)
-├─ skills/                    # 내 스킬 (vendored, 소유)
+├─ skills/                    # 내 스킬 (vendored, 소유) — set-initial 포함
 ├─ templates/                 # 설계·구현계획·구현후보고 (vault와 동기화)
 ├─ install/                   # 대화형 설치·세팅 스크립트 (script-standards 준수)
 │  ├─ setup                   #   최초 설치 + 1회 세팅
