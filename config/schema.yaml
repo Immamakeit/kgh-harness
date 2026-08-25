@@ -10,6 +10,7 @@ top_level:
   storage:        { type: map,    required: false }
   stages:         { type: map,    required: false }
   bootstrap:      { type: map,    required: false }
+  preferences:    { type: map,    required: false }
   agent_mode:     { type: enum, values: [single, multi], default: multi, validated_by: schema }
   # 주의: top_level 스칼라 값은 구조(키 존재)만 검사된다 — validate_config.py 는
   # top_level 에 대해 필수 여부만 확인하고 enum 값 자체는 검사하지 않는다
@@ -51,3 +52,14 @@ bootstrap:
   # 확인하고 stages만 별도로 하위 키를 본다. prompt에 오타값을 넣어도 통과한다.
   # 해석 규칙(플레이북 §0-1): off가 아닌 값은 전부 ask로 취급 — 오타의 결과를 예측 가능하게 한다.
   prompt: { type: enum, values: [ask, off], default: ask }
+
+preferences:
+  # 선호 기반 옵션 추천. preference-options 스킬이 소유한다.
+  # 하위 키 검증은 bootstrap 과 같은 수준(구조만) 이다 — 이 서브스키마도 검증기가
+  # 읽지 않는다. write_to 에 오타값을 넣어도 통과한다.
+  # 해석 규칙(플레이북 §1-5 원칙, 스킬 문서가 소유): project 가 **아닌** 값은
+  # (부재·오타 포함) 전부 global 로 취급한다. agent_mode·bootstrap.prompt 와
+  # 방향이 다른 이유는 "덜 놀라운 쪽"이 값마다 다르기 때문이다 — project 쓰기는
+  # 대상 저장소 git 히스토리에 선택 이력이 섞이는 부작용이 있어, 오타가 그쪽으로
+  # 넘어가는 것이 반대 방향보다 놀랍다.
+  write_to: { type: enum, values: [global, project], default: global }

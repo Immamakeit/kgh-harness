@@ -799,6 +799,65 @@ test_validate_config() {
   else
     fail_case "agent_mode: 오타값도 구조검사는 통과" "exit=$? — $(tail -2 "${dir}/am-typo.log")"
   fi
+
+  # ── preferences (2026-08-25 신설, preference-options 국면 B T5) ────────
+  # 스킬 문서(skills/preference-options/SKILL.md)가 preferences.write_to 를
+  # 설명하는데 스키마에 그 키가 없으면, 사용자가 문서대로 컨피그를 적는 순간
+  # HRN-E004(알 수 없는 최상위 키)로 차단된다. 아래가 그 불일치를 잡는다.
+
+  # (18) preferences 블록이 있는 컨피그 → 통과 (top_level 등록 확인)
+  { cat "${REPO_ROOT}/harness.config.yaml"
+    printf 'preferences:\n  write_to: global\n'; } > "${dir}/pref-global.yaml"
+  if "$vc" "${dir}/pref-global.yaml" >"${dir}/pref-global.log" 2>&1; then
+    pass_case "preferences.write_to: global → 통과"
+  else
+    fail_case "preferences.write_to: global → 통과" "exit=$? — $(tail -2 "${dir}/pref-global.log")"
+  fi
+
+  # (19) write_to: project → 통과 (허용값 둘 다 살아 있는지)
+  { cat "${REPO_ROOT}/harness.config.yaml"
+    printf 'preferences:\n  write_to: project\n'; } > "${dir}/pref-project.yaml"
+  if "$vc" "${dir}/pref-project.yaml" >"${dir}/pref-project.log" 2>&1; then
+    pass_case "preferences.write_to: project → 통과"
+  else
+    fail_case "preferences.write_to: project → 통과" "exit=$? — $(tail -2 "${dir}/pref-project.log")"
+  fi
+
+  # (20) write_to 오타값 → 구조 검사는 통과 (bootstrap.prompt·agent_mode 와 같은
+  #      의도된 한계 — 검증기는 top_level 하위 스칼라 값을 보지 않는다. 여기서
+  #      비-PASS가 나오면 한계가 깨진 것이므로 원인부터 규명한다).
+  #      값 해석("project 가 아니면 전부 global")은 스킬 문서가 소유한다.
+  { cat "${REPO_ROOT}/harness.config.yaml"
+    printf 'preferences:\n  write_to: bogus\n'; } > "${dir}/pref-typo.yaml"
+  if "$vc" "${dir}/pref-typo.yaml" >"${dir}/pref-typo.log" 2>&1; then
+    pass_case "preferences.write_to: 오타값도 구조검사는 통과 (의도된 한계)"
+  else
+    fail_case "preferences.write_to: 오타값도 구조검사는 통과" "exit=$? — $(tail -2 "${dir}/pref-typo.log")"
+  fi
+
+  # (21) preferences 블록이 통째로 없는 구버전 컨피그 → 통과 (하위호환)
+  awk '/^preferences:/{skip=1; next} skip && /^[[:space:]]/{next} {skip=0; print}' \
+    "${REPO_ROOT}/harness.config.yaml" > "${dir}/pref-none.yaml"
+  assert_not_contains "$(cat "${dir}/pref-none.yaml")" "write_to" \
+    "구버전 픽스처에서 preferences 블록이 실제로 제거됨"
+  if "$vc" "${dir}/pref-none.yaml" >"${dir}/pref-none.log" 2>&1; then
+    pass_case "preferences 없는 구버전 컨피그 → 통과 (하위호환)"
+  else
+    fail_case "preferences 없는 구버전 컨피그 → 통과" "exit=$? — $(tail -2 "${dir}/pref-none.log")"
+  fi
+
+  # (22) 루트 컨피그와 배포 템플릿 **둘 다** 그대로 검증을 통과한다.
+  #      스키마에만 키를 넣고 컨피그에는 안 넣으면 (18)은 통과하지만 실사용
+  #      파일에는 그 키가 없어, 다음 사람이 문서를 보고 손으로 적어야 한다.
+  assert_contains "$(cat "${REPO_ROOT}/harness.config.yaml")" "write_to" \
+    "루트 컨피그에 preferences.write_to 실존"
+  assert_contains "$(cat "${REPO_ROOT}/config/harness.config.template.yaml")" "write_to" \
+    "배포 템플릿에 preferences.write_to 실존"
+  if "$vc" "${REPO_ROOT}/config/harness.config.template.yaml" >"${dir}/tmpl.log" 2>&1; then
+    pass_case "배포 템플릿 컨피그 → 검증 통과"
+  else
+    fail_case "배포 템플릿 컨피그 → 검증 통과" "exit=$? — $(tail -2 "${dir}/tmpl.log")"
+  fi
 }
 
 # ---- 플레이북 규칙 실존 계약 (agent-mode T7·T9) -----------------------------
