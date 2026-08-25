@@ -50,11 +50,17 @@ if [ "${1:-}" = "api" ]; then
   show_headers=0
   method=""
   endpoint=""
+  jq_filter=""
   prev=""
   for arg in "$@"; do
     case "$prev" in
       -X|--method)
         method="$arg"
+        prev="$arg"
+        continue
+        ;;
+      --jq)
+        jq_filter="$arg"
         prev="$arg"
         continue
         ;;
@@ -80,15 +86,24 @@ if [ "${1:-}" = "api" ]; then
       else
         [ "$show_headers" = 1 ] && printf 'HTTP/2.0 200 OK\r\nX-Oauth-Scopes: gist, read:org, repo, workflow\r\n\r\n'
       fi
-      echo '{"login":"testowner"}'
+      # 실제 gh는 --jq 필터를 적용해 bare 값을 낸다(전체 JSON을 그대로 내지 않는다).
+      # 이 스텁은 SKILL.md가 실제로 쓰는 필터만 흉내낸다 — 범용 jq 구현이 아니다.
+      case "$jq_filter" in
+        .login) echo "testowner" ;;
+        *) echo '{"login":"testowner"}' ;;
+      esac
       exit 0
       ;;
     "repos/${owner}/${repo}")
       if [ "$scenario" = "no_admin" ]; then
-        echo '{"permissions":{"admin":false},"default_branch":"main","private":false,"delete_branch_on_merge":false}'
+        admin_val=false
       else
-        echo '{"permissions":{"admin":true},"default_branch":"main","private":false,"delete_branch_on_merge":false}'
+        admin_val=true
       fi
+      case "$jq_filter" in
+        .permissions.admin) echo "$admin_val" ;;
+        *) echo "{\"permissions\":{\"admin\":${admin_val}},\"default_branch\":\"main\",\"private\":false,\"delete_branch_on_merge\":false}" ;;
+      esac
       exit 0
       ;;
     "repos/${owner}/${repo}/collaborators")
@@ -107,7 +122,12 @@ if [ "${1:-}" = "api" ]; then
 JSON
         exit 0
       fi
-      echo '{"message":"Branch not protected"}' >&2
+      # 실제 gh는 JSON 본문을 stdout, 'gh: <메시지> (HTTP 404)' 진단 줄을 stderr로
+      # 나눠 쓴다(실측: gh api repos/{o}/{r}/branches/main/protection, 보호 없는
+      # 공개 저장소 대상). 스트림을 분리해 파싱하는 스킬 로직이 stdout에서 실제
+      # 본문을 볼 수 있어야 한다.
+      echo '{"message":"Branch not protected","documentation_url":"https://docs.github.com/rest/branches/branch-protection#get-branch-protection","status":"404"}'
+      echo "gh: Branch not protected (HTTP 404)" >&2
       exit 1
       ;;
     *)

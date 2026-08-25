@@ -79,3 +79,82 @@ RED에서 `git ls-remote`로 실제 GitHub에 네트워크 요청을 보내던 �
 - **HRN-W019(부분 적용 실패) 미관찰**: 6개 시나리오 중 이 경로를 강제로 재현하는
   시나리오가 없었다(스텁이 PUT은 항상 성공시키므로). 실사용에서 실제로 한쪽만
   실패하는 사례가 나오면 별도로 관찰해 보강한다.
+
+---
+
+## 델타 — T6: 스텁 `gh` 충실도 보강 (2026-08-25, ⑧ 검증 1회차 지적 처리)
+
+**이 절은 위 채점표를 덮어쓰지 않는다.** 위 채점은 보강 전 스텁으로 관찰한 결과로
+그대로 남긴다. 이 절은 스텁 자체를 실제 `gh`와 대조해 고친 뒤의 추가 관찰이다.
+
+### 실제 `gh`로 대조한 사실 (GET만, 이 세션에서 실측)
+
+```
+$ gh api repos/Immamakeit/kgh-harness --jq '.permissions.admin'
+true
+
+$ gh api repos/Immamakeit/apps-in-toss-skills/branches/main/protection \
+    1>stdout.txt 2>stderr.txt; echo exit=$?
+exit=1
+stdout: {"message":"Branch not protected","documentation_url":"...","status":"404"}
+stderr: gh: Branch not protected (HTTP 404)
+```
+
+(추가로 `repos/Immamakeit/this-repo-does-not-exist-xyz123`로 순수 404, 비공개
+저장소 다수로 403을 대조해 "JSON 본문=stdout, `gh: <message> (HTTP <status>)`
+진단=stderr" 패턴이 404 한 건에 국한되지 않음을 확인했다.)
+
+기존 스텁은 두 형태 모두와 어긋났다 — `--jq`를 무시하고 항상 전체 JSON을 냈고,
+404 JSON을 stderr로만 보내며 `gh: ... (HTTP 404)` 진단 줄이 아예 없었다.
+
+### 고친 것 — `tests/skills/branch-strategy/fixtures/stub-gh`
+
+1. **`--jq` 필터 캡처 + 두 경로만 필터링** (52~66행, 89~108행): 인자 루프에
+   `--jq` 다음 값을 `jq_filter`로 캡처하는 분기를 `-X`/`--method`와 같은 패턴으로
+   추가했다. `/user`의 `.login`과 `repos/{o}/{r}`의 `.permissions.admin`(SKILL.md
+   0단계 5번이 실제로 쓰는 경로) 두 개만 bare 값을 내도록 분기했다 — 범용 jq
+   구현은 만들지 않았다.
+   ```bash
+   case "$jq_filter" in
+     .permissions.admin) echo "$admin_val" ;;
+     *) echo "{\"permissions\":{\"admin\":${admin_val}},...}" ;;
+   esac
+   ```
+2. **404 스트림 분리** (113~132행): `branches/main/protection` GET 404 응답을
+   JSON은 stdout, 진단 줄은 stderr로 나눴다.
+   ```bash
+   echo '{"message":"Branch not protected","documentation_url":"...","status":"404"}'
+   echo "gh: Branch not protected (HTTP 404)" >&2
+   exit 1
+   ```
+
+### 재관찰 — 영향받는 경로만 (스텁 직접 호출로 검증)
+
+`claude --dangerously-skip-permissions -p` 재실행을 시도했으나 이 세션(서브에이전트)에서
+**auto mode classifier가 차단**했다("Blocked by classifier" — 인자 없는 `claude -p "say ok"`
+프로브도 동일하게 차단됨을 확인해, 이 T6 작업 특유의 문제가 아니라 이 세션의 일반적
+제약임을 확인했다). 우회를 시도하지 않고, 대신 SKILL.md에 적힌 **명령 형태 그대로**를
+스텁에 직접 호출해 출력 바이트를 실제 `gh` 실측값과 대조했다:
+
+| 호출 | 보강 전(추정) | 보강 후(실측) | 실제 `gh`(실측) |
+|---|---|---|---|
+| `gh api repos/{o}/{r} --jq .permissions.admin` (admin=true) | 전체 JSON | `true` | `true` |
+| `gh api repos/{o}/{r} --jq .permissions.admin` (no_admin, admin=false) | 전체 JSON | `false` | `false`(구조상 동일 패턴) |
+| `gh api repos/{o}/{r}/branches/main/protection` (404, solo_unprotected) | stdout 빈 값, stderr에 JSON | stdout에 JSON, stderr에 `gh: Branch not protected (HTTP 404)`, exit 1 | 동일 |
+
+`already_protected`(200 응답, jq 미사용 경로)는 이번 보강과 무관해 재확인만 하고
+델타에 넣지 않는다 — 출력 불변 확인됨(위 스모크 테스트 "already_protected unaffected").
+
+### 헤드리스 `claude -p` 재관찰이 막힌 것에 대한 판단
+
+`no_admin`·`solo_unprotected`(404 경로)에 대한 **전체 시나리오 재관찰**(스킬이 이
+새 출력 형태를 실제로 어떻게 소비하는지, 예: bare `true`/`false`를 `[ "$x" = true ]`로
+비교하는지, stdout 파싱 로직이 있는지)은 이번 세션에서 못했다 — classifier 차단은
+이 세션의 권한 경계이지 스텁의 결함이 아니므로, 우회하지 않고 이 사실 자체를
+기록해 다음 세션(또는 오케스트레이터 권한이 있는 세션)이 마저 하도록 남긴다.
+스텁이 **정확한 바이트를 내는지**는 위 표로 확정됐다 — 남은 것은 "스킬이 그 바이트를
+올바르게 소비하는가"이며, 이는 스텁 충실도(T6의 범위)가 아니라 스킬 로직 검증(T3
+GREEN의 범위)에 속한다. SKILL.md 자체는 `--jq`가 bare 값을 낸다고 가정하고 `==` 로
+직접 비교하는 서술(§0단계 5번 "== true")이라 새 스텁 출력과 정합적으로 보이지만,
+이 정합성의 최종 확인은 헤드리스 재관찰 없이는 완결되지 않는다는 점을 미해결로
+남긴다.
