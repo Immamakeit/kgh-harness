@@ -10,6 +10,12 @@ top_level:
   storage:        { type: map,    required: false }
   stages:         { type: map,    required: false }
   bootstrap:      { type: map,    required: false }
+  agent_mode:     { type: enum, values: [single, multi], default: multi, validated_by: schema }
+  # 주의: top_level 스칼라 값은 구조(키 존재)만 검사된다 — validate_config.py 는
+  # top_level 에 대해 필수 여부만 확인하고 enum 값 자체는 검사하지 않는다
+  # (active_harness 만 어댑터 조회로 간접 검증됨).
+  # single 이 아닌 값은(오타 포함) 전부 multi 로 취급한다 — 플레이북 §1, bootstrap.prompt
+  # 해석 규칙(§0-1)과 동일한 안전측 기본화.
 
 defaults:
   model:  { type: string, default: sonnet, validated_by: adapter }

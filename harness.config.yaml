@@ -3,6 +3,11 @@
 
 active_harness: claude          # claude | codex(추후) | ollama(추후)
 
+agent_mode: multi                # single | multi(기본) — 전역 마스터 스위치.
+                                  # single이면 stages.<구간>.dispatch 값은 전부 무시된다.
+                                  # 주의: 이 값은 검증기가 검사하지 않는다 — single이 아닌
+                                  # 값은(오타 포함) 전부 multi로 취급된다(플레이북 §1).
+
 defaults:                        # 구간 미지정 시 상속
   model: sonnet
   effort: medium                 # Claude 어댑터의 Agent 디스패치는 현재 effort 미지원 — 플레이북 §1 참조
