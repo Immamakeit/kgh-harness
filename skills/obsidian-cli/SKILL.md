@@ -18,7 +18,10 @@ description: Use when saving harness output documents (설계/구현계획/구�
 <vault_root>/wiki/<카테고리>/<프로젝트>/_work/<작업명>/<YYYY-MM-DD>/구현후보고.md
 ```
 
-- 파일명은 **고정 3종** — 날짜·작업명을 파일명에 넣지 않는다 (폴더가 그 역할).
+- **파일명은 `workdocs.names` 가 정한다** — 작업 공간과 vault 에서 같은 이름을 쓴다.
+  같은 문서를 두 이름으로 부르면 대조가 불가능해진다. 위 경로의 `설계.md` 등은
+  컨피그 기본값일 때의 예시다. 날짜·작업명을 파일명에 넣지 않는 것은 그대로다
+  (폴더가 그 역할).
 - `vault_root` · `path_template`은 `harness.config.yaml`의 `storage` 블록에서 읽는다.
   컨피그가 없으면 사용자에게 vault 경로를 확인받는다.
 - **우선순위: 컨피그가 이긴다.** `storage.path_template`이 지정돼 있으면 위 기본 구조
@@ -81,7 +84,8 @@ description: Use when saving harness output documents (설계/구현계획/구�
 
 ## 완료 기준 (제출 전 자가 점검)
 
-- [ ] 경로가 계약과 일치 (wiki/ 루트, _work, 작업명·날짜 폴더, 고정 파일명 3종)
+- [ ] 경로가 계약과 일치 (wiki/ 루트, _work, 작업명·날짜 폴더,
+      파일명은 `workdocs.names` 가 정한 3종)
 - [ ] 카테고리를 임의 창작하지 않음 (기존 폴더 선택 or 되물음)
 - [ ] 템플릿 구조 + status 갱신 + ≤10자 요약
 - [ ] CLI 확인 흔적이 보고에 있음 (사용 or HRN-W011 경고)

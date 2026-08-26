@@ -1194,6 +1194,36 @@ sys.stdout.write("".join(out))
 PYEOF
 }
 
+# ---- 작업 문서 이름 소유권 (project-conventions T5) -------------------------
+# 문서 계약 단언이다 — 이 파일들은 LLM 이 읽는 지침이라 셸로 행동 검증이 불가능하다
+# (agent-mode·preference-options 에서 확립된 방식). 여기서 막는 것은 "컨피그가
+# 정한다"는 조항이 리팩터링 중 사라지고 하드코딩만 남는 것이다.
+test_workdocs_naming_ownership() {
+  group "작업 문서 이름 — workdocs.names 소유권"
+
+  local f flat
+  for f in core/playbook.md skills/design-doc/SKILL.md skills/plan-doc/SKILL.md \
+           skills/report-doc/SKILL.md skills/obsidian-cli/SKILL.md; do
+    assert_present "${REPO_ROOT}/${f}" "${f} 실존"
+    flat="$(tr '\n' ' ' < "${REPO_ROOT}/${f}" | tr -s ' ')"
+    assert_contains "$flat" "workdocs.names" "${f}: workdocs.names 참조 실존"
+  done
+
+  # 스킬 문서 3종은 기본값을 예시로 남기되 "컨피그가 우선"을 명시해야 한다
+  # (storage.path_template 이 이미 쓰는 방식 — 예시를 지우면 읽는 쪽이 감을 잃는다)
+  for f in skills/design-doc/SKILL.md skills/plan-doc/SKILL.md skills/report-doc/SKILL.md; do
+    flat="$(tr '\n' ' ' < "${REPO_ROOT}/${f}" | tr -s ' ')"
+    assert_regex "$flat" 'workdocs\.names[^~]{0,200}(우선|정한다|이긴다)' \
+      "${f}: '컨피그가 우선' 취지 실존"
+  done
+
+  # obsidian-cli 는 vault 저장 파일명도 같은 이름을 따라야 한다 —
+  # 같은 문서를 작업 공간과 vault 에서 다른 이름으로 부르면 대조가 불가능해진다
+  flat="$(tr '\n' ' ' < "${REPO_ROOT}/skills/obsidian-cli/SKILL.md" | tr -s ' ')"
+  assert_regex "$flat" 'workdocs\.names[^~]{0,300}(vault|저장)' \
+    "obsidian-cli: vault 저장 파일명도 workdocs.names 를 따름"
+}
+
 # ---- 프로젝트 스킬 해석 (project-conventions) -------------------------------
 # 설계 §2 가 짚은 테스트 구멍을 메운다: install/setup 은 지금까지 **빈 temp 디렉터리**
 # 로만 검증돼, "대상이 자기 skills/ 를 가진 경우"가 한 번도 실행된 적이 없다.
@@ -1741,6 +1771,7 @@ test_playbook_rule_contracts
 test_question_label_contracts
 test_preference_integration_contracts
 test_project_skills_resolution
+test_workdocs_naming_ownership
 test_playbook_cross_refs
 test_ask_choice
 test_detect_obsidian_vaults

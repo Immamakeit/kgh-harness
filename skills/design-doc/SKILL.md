@@ -14,9 +14,10 @@ description: Use when the design/brainstorming discussion for a task has settled
 
 - 상류 결과물(브레인스토밍 합의, 판단 게이트 판정, 영향도 조사)을 **인용해서** 채운다.
   재분석·재유도하지 않는다.
-- 위치: `.harness/work/<작업명>/<YYYY-MM-DD>/설계.md`
-  (컨피그 `workdocs.path`가 있으면 그것이 우선. vault에 직접 쓰지 않는다 — vault 저장은
-  판정 통과 후 obsidian-cli 스킬의 몫)
+- 위치: **컨피그가 정한다** — `<workdocs.path>/<workdocs.layout>/` 밑
+  `workdocs.names.design` 이름으로 쓴다. 컨피그 값이 하네스 기본값을 **항상 이긴다.**
+  기본값 예시: `.harness/work/<작업명>/<YYYY-MM-DD>/설계.md`
+  (vault에 직접 쓰지 않는다 — vault 저장은 판정 통과 후 obsidian-cli 스킬의 몫)
 - 템플릿: 설계 템플릿의 5섹션 전부 필수 — 요구사항/의도 · 작업 대상 및 영향도(코드 인용,
   일반론 금지) · 설계안 · 작업 범위/**비대상** · 승인.
 - **비대상에 "없음" 금지** — 구체 항목 1개 이상. 논의에서 미뤄진 것, 알지만 안 고치는
@@ -25,7 +26,7 @@ description: Use when the design/brainstorming discussion for a task has settled
   사용자 승인 후(obsidian-cli가 vault 저장 시 갱신) `승인`. 반려 시 `승인대기` 유지.
   **다른 상태값을 창작하지 않는다.** 단, 이 스킬 자신의 산출은 항상 `승인대기`까지다 —
   `승인`은 승인 게이트를 통과한 뒤 저장 단계에서만 붙는다.
-- **이 단계에서 만드는 문서는 설계.md 하나다.** 구현계획·구현후보고를 미리 쓰지 않는다.
+- **이 단계에서 만드는 문서는 설계 문서 하나다.** 계획·보고 문서를 미리 쓰지 않는다.
 
 ## 2. 승인 게이트 (HARD GATE)
 
@@ -68,7 +69,7 @@ description: Use when the design/brainstorming discussion for a task has settled
 
 ## 완료 기준 (제출 전 자가 점검)
 
-- [ ] 설계.md가 `.harness/work/<작업명>/<날짜>/`에 있고 5섹션 + ≤10자 요약 완비
+- [ ] 설계 문서가 `workdocs` 컨피그가 정한 자리에 있고 5섹션 + ≤10자 요약 완비
 - [ ] 비대상에 구체 항목 ≥1
 - [ ] status = `승인대기` (창작 상태값 없음)
 - [ ] 소스·의존성 무변경 (git status로 확인 가능해야 함)

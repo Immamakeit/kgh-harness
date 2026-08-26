@@ -27,8 +27,10 @@ description: Use when implementation and verification are done and it is time to
 
 ## 3. 문서 굳히기
 
-- 위치: `.harness/work/<작업명>/<YYYY-MM-DD>/구현후보고.md` (설계.md·구현계획.md 옆.
-  컨피그 `workdocs.path` 우선. vault 직접 쓰기 금지 — 저장은 판정 통과 후 obsidian-cli 몫)
+- 위치: **컨피그가 정한다** — `<workdocs.path>/<workdocs.layout>/` 밑
+  `workdocs.names.report` 이름으로, 설계·계획 문서 옆에. 컨피그 값이 기본값을 **항상 이긴다.**
+  기본값 예시: `.harness/work/<작업명>/<YYYY-MM-DD>/구현후보고.md`
+  (vault 직접 쓰기 금지 — 저장은 판정 통과 후 obsidian-cli 몫)
 - 템플릿: 구현후보고 템플릿 준수 — 변경 요약 · 커밋(`[작업유형]: 메시지` 형식) ·
   검증 결과(3항목) · 직접 확인 시나리오 · 사용자 판정 + frontmatter + ≤10자 요약.
 - frontmatter `status` 수명주기(전체, 이 스킬이 정의처): `보고` → 사용자 판정 통과 후
@@ -57,7 +59,7 @@ description: Use when implementation and verification are done and it is time to
 
 - [ ] 모든 주장이 실물 확인됨 (불일치 시 보고 중단·표면화했는가)
 - [ ] 검증 3항목 각각 기재, "실행 못 함"이 "통과"로 둔갑하지 않음
-- [ ] 구현후보고.md가 `.harness/work/<작업명>/<날짜>/`에 템플릿대로 존재
+- [ ] 보고 문서가 `workdocs` 컨피그가 정한 자리에 템플릿대로 존재
 - [ ] 직접 확인 시나리오: 단계별 + 기대 결과 + 부정 케이스
 - [ ] 최종 응답이 "통과/실패만 입력" 구조로 종료
 - [ ] 사용 보고 (하네스 공통 규칙): 그 턴 보고 마지막에 `— 적용 스킬: report-doc`
