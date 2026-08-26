@@ -24,7 +24,17 @@ defaults:
   effort: { type: string, default: medium, validated_by: adapter }
 
 workdocs:
-  path: { type: string, default: .harness/work }
+  # 역할 3개(design·plan·report)는 워크플로 게이트(⑤ 승인 / ⑥ 확정 / ⑩ 판정)와 묶여
+  # 있어 개수·의미를 바꿀 수 없다. 컨피그가 정하는 것은 **표시 이름과 하위 경로**뿐이다.
+  # names 를 쓸 거면 세 역할을 전부 적어야 한다 — 둘만 적으면 나머지 하나를 무엇으로
+  # 부를지 아무도 모르는 상태가 되므로 HRN-E004 로 차단한다.
+  path:   { type: string, default: .harness/work }
+  layout: { type: string, default: "<작업명>/<YYYY-MM-DD>" }
+  names:
+    # 치환자 표기는 storage.path_template 과 동일하다 — 새 문법을 만들지 않는다.
+    design: { type: string, default: 설계.md }
+    plan:   { type: string, default: 구현계획.md }
+    report: { type: string, default: 구현후보고.md }
 
 storage:
   enabled:       { type: bool, default: true }

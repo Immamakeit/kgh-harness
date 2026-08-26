@@ -921,6 +921,36 @@ test_validate_config() {
   assert_contains "$(cat "${REPO_ROOT}/config/harness.config.template.yaml")" "as_recommended" \
     "배포 템플릿에 preferences.as_recommended 실존"
 
+  # ── workdocs.layout · names (project-conventions T4) ───────────────────
+  # 역할 3개(design/plan/report)는 게이트와 묶여 있어 개수·의미를 못 바꾼다.
+  # 바뀌는 것은 표시 이름과 하위 경로뿐이다 — 그래서 **부분 지정이 가장 위험한 입력**
+  # 이다(둘만 적으면 나머지 하나를 무엇으로 부를지 아무도 모른다).
+
+  # (28) layout·names 를 전부 지정 → 통과
+  wd_fixture "$REPO_ROOT" "design: design.md|plan: plan.md|report: report.md" \
+    > "${dir}/wd-full.yaml"
+  if "$vc" "${dir}/wd-full.yaml" >"${dir}/wd-full.log" 2>&1; then
+    pass_case "workdocs.layout + names 전부 지정 → 통과"
+  else
+    fail_case "workdocs.layout + names 전부 지정 → 통과" "exit=$? — $(tail -3 "${dir}/wd-full.log")"
+  fi
+
+  # (29) names 를 아예 안 쓰면 → 통과 (하위호환)
+  if "$vc" "${REPO_ROOT}/harness.config.yaml" >"${dir}/wd-none.log" 2>&1; then
+    pass_case "workdocs.names 부재 → 통과 (하위호환)"
+  else
+    fail_case "workdocs.names 부재 → 통과" "exit=$? — $(tail -3 "${dir}/wd-none.log")"
+  fi
+
+  # (30) 역할 하나를 빼면 → HRN-E004 차단
+  wd_fixture "$REPO_ROOT" "design: design.md|plan: plan.md" > "${dir}/wd-part.yaml"
+  if "$vc" "${dir}/wd-part.yaml" >"${dir}/wd-part.log" 2>&1; then
+    fail_case "workdocs.names 역할 누락 → 차단" "exit 0 으로 통과함"
+  else
+    assert_contains "$(cat "${dir}/wd-part.log")" "HRN-E004" "workdocs.names 역할 누락 → HRN-E004"
+    assert_contains "$(cat "${dir}/wd-part.log")" "report" "누락된 역할명을 그대로 지목"
+  fi
+
   # (27) 배포 템플릿의 as_recommended 는 꺼진 채로 나간다 — 설치하자마자 질문이
   #      자동으로 건너뛰어지면 새 사용자에게 가장 놀랍다(설계 §3-3 안전측 기본).
   assert_regex "$(grep -E '^\s*as_recommended:' "${REPO_ROOT}/config/harness.config.template.yaml")" \
@@ -1132,6 +1162,35 @@ if broken:
     sys.exit(1)
 print(f"OK:{checked}")
 sys.exit(0)
+PYEOF
+}
+
+# wd_fixture <레포루트> "<names 줄들 | 로 구분>"
+# 루트 컨피그에서 workdocs 블록을 통째로 걷어내고 지정한 names 만 다시 넣는다.
+# 루트 컨피그에 이미 layout·names 가 있으므로, 단순 삽입은 키 중복이 되어
+# YAML last-wins 로 의도와 다른 픽스처가 만들어진다(T4 에서 실제로 겪음).
+wd_fixture() {
+  python3 - "$1" "$2" <<'PYEOF'
+import io, sys
+src, names = sys.argv[1] + "/harness.config.yaml", sys.argv[2]
+out, skip = [], False
+for line in io.open(src, encoding="utf-8"):
+    if line.startswith("workdocs:"):
+        skip = True
+        out.append("workdocs:\n")
+        out.append("  path: .harness/work\n")
+        if names:
+            out.append("  names:\n")
+            for n in names.split("|"):
+                out.append("    %s\n" % n)
+        continue
+    if skip:
+        if line.strip() == "" or not line.startswith(" "):
+            skip = False
+        else:
+            continue
+    out.append(line)
+sys.stdout.write("".join(out))
 PYEOF
 }
 

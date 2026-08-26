@@ -242,6 +242,25 @@ def main(config_path, schema_path, adapter_dir, source_dir):
                 print(f"{C_WARN}⚠ effort 는 {active} 어댑터의 Agent 디스패치에서 "
                       f"지원되지 않아 무시됩니다 — 지정된 곳: {', '.join(used)}{C_RST}")
 
+    # ── ②-b workdocs.names 완결성 ─────────────────────────────────────────
+    # 역할 3개는 워크플로 게이트와 묶여 있다. 부분 지정은 "나머지 하나를 무엇으로
+    # 부를지 아무도 모르는" 상태라 차단한다 — 조용히 기본값으로 메우면 문서 이름이
+    # 반은 프로젝트 규약, 반은 하네스 기본값이 되어 더 놀랍다.
+    wd_names = (cfg.get("workdocs") or {}).get("names")
+    if wd_names is not None:
+        checked += 1
+        if not isinstance(wd_names, dict):
+            err("E004", "workdocs.names: 매핑이 아님",
+                "workdocs.names 를 design/plan/report 세 키를 가진 매핑으로 적으세요",
+                "이름을 바꾸지 않을 거라면 workdocs.names 를 통째로 지우세요")
+        else:
+            missing = [k for k in ("design", "plan", "report") if not wd_names.get(k)]
+            if missing:
+                err("E004",
+                    f"workdocs.names: 역할 {', '.join(missing)} 누락 (셋 다 적어야 합니다)",
+                    f"workdocs.names 에 {', '.join(missing)} 를 추가하세요",
+                    "일부만 바꿀 수는 없습니다 — 기본값을 쓰려면 workdocs.names 를 통째로 지우세요")
+
     # ── ③ 참조 실존 ───────────────────────────────────────────────────────
     # 스킬 이름은 세 이름공간에서 온다:
     #   superpowers:<이름>  → 외부 플러그인, 파일 실존을 요구하지 않는다

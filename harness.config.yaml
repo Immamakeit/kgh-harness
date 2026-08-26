@@ -14,6 +14,11 @@ defaults:                        # 구간 미지정 시 상속
 
 workdocs:
   path: .harness/work            # 작업 문서(설계·구현계획·구현후보고) 보관 위치, 프로젝트 루트 기준
+  layout: "<작업명>/<YYYY-MM-DD>"   # path 아래 하위 경로 패턴 (치환자는 storage.path_template 과 동일)
+  names:                           # 역할 → 파일명. 셋 다 적거나, 통째로 지우거나 (부분 지정 금지)
+    design: 설계.md
+    plan:   구현계획.md
+    report: 구현후보고.md
 
 storage:
   enabled: true
