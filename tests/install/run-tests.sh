@@ -411,6 +411,17 @@ test_update_contract() {
   assert_eq "$commit_line" "SOURCE_COMMIT=${new_head}" ".meta SOURCE_COMMIT이 새 커밋으로 갱신됨"
 
   assert_contains "$out" "new_feature_key" "새 설정 키를 안내에 명시"
+
+  # ── T6: 사라진 키 안내 (project-conventions) ────────────────────────────
+  # update 는 지금까지 **새 키만** 보고 제거된 키는 보지 않았다(comm -23 한 방향).
+  # 그 비대칭 때문에, 스키마에서 키를 없애면 기존 설치본이 다음 검증에서 **이유 없이**
+  # 멈춘다. 방향을 뒤집은 비교를 추가해 "대상에만 남은 키"도 안내한다(자동 삭제 금지).
+  printf '\nlegacy_dead_key: true\n' >> "${target}/harness.config.yaml"
+  local out2
+  out2="$("${target}/.harness/install/update" </dev/null 2>&1)"
+  assert_contains "$out2" "legacy_dead_key" "대상에만 남은 키를 안내에 명시"
+  assert_contains "$(cat "${target}/harness.config.yaml")" "legacy_dead_key" \
+    "사라진 키를 자동으로 지우지 않음 (안내만)"
   assert_not_contains "$(cat "${target}/harness.config.yaml")" "new_feature_key" \
     "새 설정 키를 자동으로 추가하지 않음(안내만)"
 }
@@ -949,6 +960,38 @@ test_validate_config() {
   else
     assert_contains "$(cat "${dir}/wd-part.log")" "HRN-E004" "workdocs.names 역할 누락 → HRN-E004"
     assert_contains "$(cat "${dir}/wd-part.log")" "report" "누락된 역할명을 그대로 지목"
+  fi
+
+  # (31) storage.docs 제거 — 읽는 곳이 0곳인 채 스키마에만 선언돼 "설정 표면이 있는 척"
+  #      을 하던 키다. 문서 이름은 workdocs.names 가 소유한다(같은 것을 두 곳에서 정하지 않는다).
+  #
+  #      **주의 — 계획 §6 의 가정은 틀렸다.** "제거하면 기존 설치본이 HRN-E004 로 멈춘다"
+  #      고 적었지만, 검증기는 **최상위 키만** 미지 여부를 본다(validate_config.py ① 구조).
+  #      storage.docs 는 하위 키라 애초에 검증 대상이 아니었고, 제거해도 차단되지 않는다.
+  #      아래 두 케이스가 그 사실을 고정한다 — 잘못된 가정이 다시 들어오지 못하게.
+  python3 - "$REPO_ROOT" > "${dir}/legacy-docs.yaml" <<'PYEOF'
+import io, sys
+s = io.open(sys.argv[1] + "/harness.config.yaml", encoding="utf-8").read()
+s = s.replace("storage:\n", "storage:\n  docs: [설계, 구현계획, 구현후보고]\n")
+sys.stdout.write(s)
+PYEOF
+  if "$vc" "${dir}/legacy-docs.yaml" >"${dir}/legacy-docs.log" 2>&1; then
+    pass_case "storage.docs 잔존은 차단되지 않는다 (하위 키는 검증 대상이 아님)"
+  else
+    fail_case "storage.docs 잔존은 차단되지 않는다" "exit=$? — $(tail -3 "${dir}/legacy-docs.log")"
+  fi
+  # 반면 **최상위** 미지 키는 여전히 차단된다 — GONE_KEYS 안내가 필요한 쪽은 이쪽이다
+  { cat "${REPO_ROOT}/harness.config.yaml"; printf 'legacy_top_key: 1\n'; } > "${dir}/legacy-top.yaml"
+  if "$vc" "${dir}/legacy-top.yaml" >"${dir}/legacy-top.log" 2>&1; then
+    fail_case "최상위 미지 키는 차단됨" "exit 0 으로 통과함"
+  else
+    assert_contains "$(cat "${dir}/legacy-top.log")" "HRN-E004" "최상위 미지 키 → HRN-E004"
+  fi
+  # 스키마에서 실제로 빠졌는지 (workdocs: 가 'docs:' 를 부분문자열로 포함하므로 앵커를 건다)
+  if grep -qE '^  docs:' "${REPO_ROOT}/config/schema.yaml"; then
+    fail_case "스키마에서 storage.docs 제거됨" "^  docs: 가 아직 존재함"
+  else
+    pass_case "스키마에서 storage.docs 제거됨"
   fi
 
   # (27) 배포 템플릿의 as_recommended 는 꺼진 채로 나간다 — 설치하자마자 질문이

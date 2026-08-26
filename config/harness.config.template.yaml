@@ -29,7 +29,6 @@ storage:
   tool: obsidian-cli
   vault_root: null               # Obsidian vault 절대경로. null이면 저장 건너뜀(HRN-W010) — setup이 물어서 채운다
   path_template: "wiki/프로젝트/<프로젝트>/_work/<작업명>/<YYYY-MM-DD>"
-  docs: [설계, 구현계획, 구현후보고]
   approval: auto                 # auto = 판정 통과 시 자동 저장 | required = 저장 직전 확인
 
 bootstrap:                       # 기반 문서 세팅 제안 (set-initial 스킬)
