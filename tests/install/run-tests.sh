@@ -1135,6 +1135,46 @@ sys.exit(0)
 PYEOF
 }
 
+# ---- 프로젝트 스킬 해석 (project-conventions) -------------------------------
+# 설계 §2 가 짚은 테스트 구멍을 메운다: install/setup 은 지금까지 **빈 temp 디렉터리**
+# 로만 검증돼, "대상이 자기 skills/ 를 가진 경우"가 한 번도 실행된 적이 없다.
+# 소스 레포에서는 프로젝트 루트와 source_dir 가 같은 자리라 이 분기가 가려져 있었다.
+test_project_skills_resolution() {
+  group "프로젝트 스킬 해석 — 자기 skills/ 를 가진 대상"
+
+  local t
+  t="$(mktemp -d "${WORK}/psk.XXXXXX")"
+  ( cd "$REPO_ROOT" && ./install/setup "$t" </dev/null >/dev/null 2>&1 )
+  assert_present "${t}/.harness/install/validate-config" "대상에 검증기 설치됨"
+
+  # 대상 프로젝트가 **자기 스킬**을 갖고 있다 (후보 저장소의 skills/ 12종과 같은 상황)
+  mkdir -p "${t}/skills/myskill"
+  cat > "${t}/skills/myskill/SKILL.md" <<'SK'
+---
+name: myskill
+description: Use when the project's own convention applies.
+---
+# 프로젝트 소유 스킬
+SK
+  assert_present "${t}/skills/myskill/SKILL.md" "대상 루트에 프로젝트 스킬 존재"
+
+  # 컨피그에서 그 스킬을 참조한다
+  awk '/^  implement:/{f=1} f && /^    skills: \[/{sub(/\]$/, ", myskill]"); f=0} {print}' \
+    "${t}/harness.config.yaml" > "${t}/c" && mv "${t}/c" "${t}/harness.config.yaml"
+  assert_contains "$(cat "${t}/harness.config.yaml")" "myskill" "컨피그가 프로젝트 스킬을 참조"
+
+  # (T1 기준선) 지금은 차단된다 — 프로젝트 루트 skills/ 를 아예 보지 않기 때문이다.
+  local log="${t}/vc.log"
+  if "${t}/.harness/install/validate-config" "${t}/harness.config.yaml" >"$log" 2>&1; then
+    fail_case "프로젝트 스킬 참조가 현재는 차단됨 (T1 기준선)" "exit 0 으로 통과함"
+  else
+    assert_contains "$(cat "$log")" "HRN-E005" "프로젝트 스킬 참조 → HRN-E005 차단"
+  fi
+  # 에러가 지목하는 경로가 .harness/skills/ 라는 것이 "프로젝트 경로를 안 본다"의 증거다
+  assert_contains "$(cat "$log")" ".harness/skills/myskill/SKILL.md" \
+    "에러가 하네스 경로만 지목 (프로젝트 경로 미탐색의 증거)"
+}
+
 # ---- preference-options ↔ set-initial 통합 계약 (국면 C T10) ----------------
 # 문서 계약 단언이다 — 실제 개인화·자동 채택이 일어나는지는 헤드리스 관찰(T12)이 본다.
 # 여기서 막는 것은 통합의 뼈대가 리팩터링 중 사라지는 것이다: 참조 한 줄, question_id
@@ -1543,6 +1583,7 @@ test_validate_config
 test_playbook_rule_contracts
 test_question_label_contracts
 test_preference_integration_contracts
+test_project_skills_resolution
 test_playbook_cross_refs
 test_ask_choice
 test_detect_obsidian_vaults
