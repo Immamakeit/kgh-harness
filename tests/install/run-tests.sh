@@ -1229,6 +1229,48 @@ SK
   assert_regex "$pb_flat" 'project:[^~]{0,200}(충돌|양쪽)' \
     "플레이북 §1-4: project: 접두사의 용도(충돌 해소) 실존"
   assert_contains "$pb_flat" "HRN-E015" "플레이북 §1-4: HRN-E015 실존"
+
+  # ── T3: 도그푸딩 함정 — 프로젝트 루트와 source_dir 가 같은 자리인 경우 ──
+  # 소스 레포에서는 이 둘이 같은 디렉터리다. 그대로 두면 번들 스킬 전부가
+  # "양쪽에 존재"로 판정돼 HRN-E015 가 스킬 수만큼 터진다. realpath 가 같으면
+  # 한 곳으로 취급해 막는다. **정반대 결과를 내는 두 케이스를 나란히 둔다** —
+  # 한쪽만 보면 "동작한다"고 오판할 수 있다.
+
+  # (7) 소스 트리 배치: 컨피그와 skills/ 가 같은 루트 → 충돌 아님
+  local self="${WORK}/psk-self"
+  rm -rf "$self"; mkdir -p "$self"
+  { cat "${REPO_ROOT}/harness.config.yaml"; printf 'skills:\n  project_path: skills\n'; } \
+    > "${REPO_ROOT}/psk-self-check.local.yaml"
+  if "${REPO_ROOT}/install/validate-config" "${REPO_ROOT}/psk-self-check.local.yaml" \
+       >"${WORK}/self.log" 2>&1; then
+    pass_case "소스 트리 배치(프로젝트 루트 == source_dir) → 충돌 아님"
+  else
+    fail_case "소스 트리 배치(프로젝트 루트 == source_dir) → 충돌 아님" \
+      "exit=$? — $(grep -c 'HRN-E015' "${WORK}/self.log") 건의 E015 발생"
+  fi
+  assert_not_contains "$(cat "${WORK}/self.log")" "HRN-E015" \
+    "소스 트리 배치에서 HRN-E015 0건"
+  rm -f "${REPO_ROOT}/psk-self-check.local.yaml"
+
+  # (8) 심볼릭 링크로 우회해도 같은 곳이면 같은 취급 (realpath 를 쓰는 이유)
+  ln -sfn "${REPO_ROOT}/skills" "${WORK}/psk-link"
+  { cat "${REPO_ROOT}/harness.config.yaml"
+    printf 'skills:\n  project_path: %s\n' "${WORK}/psk-link"; } \
+    > "${REPO_ROOT}/psk-link-check.local.yaml"
+  # 절대경로를 줘도 project_root 기준 join 이 절대경로를 그대로 쓴다(os.path.join 규약)
+  if "${REPO_ROOT}/install/validate-config" "${REPO_ROOT}/psk-link-check.local.yaml" \
+       >"${WORK}/link.log" 2>&1; then
+    pass_case "심볼릭 링크 우회도 같은 곳으로 취급 (realpath)"
+  else
+    fail_case "심볼릭 링크 우회도 같은 곳으로 취급" \
+      "exit=$? — $(grep -c 'HRN-E015' "${WORK}/link.log") 건의 E015 발생"
+  fi
+  rm -f "${REPO_ROOT}/psk-link-check.local.yaml"; rm -f "${WORK}/psk-link"
+
+  # (9) 대조 — 설치본 배치(다른 자리)에서는 같은 이름이 여전히 차단된다.
+  #     (3)이 이미 그 케이스다. 여기서는 두 결과가 실제로 갈렸음을 한 줄로 못 박는다.
+  assert_contains "$(cat "${t}/dup.log")" "HRN-E015" \
+    "대조: 설치본 배치(다른 자리)에서는 같은 이름이 차단됨"
 }
 
 # ---- preference-options ↔ set-initial 통합 계약 (국면 C T10) ----------------
