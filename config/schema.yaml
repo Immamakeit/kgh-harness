@@ -11,6 +11,7 @@ top_level:
   stages:         { type: map,    required: false }
   bootstrap:      { type: map,    required: false }
   preferences:    { type: map,    required: false }
+  skills:         { type: map,    required: false }
   agent_mode:     { type: enum, values: [single, multi], default: multi, validated_by: schema }
   # 주의: top_level 스칼라 값은 구조(키 존재)만 검사된다 — validate_config.py 는
   # top_level 에 대해 필수 여부만 확인하고 enum 값 자체는 검사하지 않는다
@@ -69,3 +70,12 @@ preferences:
   # 안전 방향이 다른 것은 원칙이 흔들려서가 아니라 값의 성격이 다르기 때문이다
   # (플레이북 §1-5).
   as_recommended: { type: bool, default: false }
+
+skills:
+  # 프로젝트 소유 스킬의 위치. preference-options 와 같은 수준(구조만) 검증이다.
+  # 기준점은 프로젝트 루트 = dirname(harness.config.yaml) — 새 관례를 만들지 않고
+  # 검증기가 이미 받는 값에서 유도한다.
+  # 해석 규칙(플레이북 §1-5): 값이 없거나 null 이면 **탐색하지 않는다.** 기본을
+  # 'skills' 로 두면 skills/ 디렉터리를 가진 기존 설치본이 업데이트만 했는데 해석
+  # 경로가 바뀌고, 이름이 겹치면 검증이 막힌다 — 켜는 것은 명시적 선택이어야 한다.
+  project_path: { type: string, default: null, nullable: true }

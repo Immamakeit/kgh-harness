@@ -83,10 +83,20 @@
        같으면 폴백을 생략하고 바로 ③) — 폴백을 실행했다면 결과 보고에 "defaults.model로
        폴백함"을 명시한다 → ③ 폴백도 실패하면
        `❌ HRN-E009 — 모델 디스패치 실패(<사유>) — defaults.model 폴백도 실패. 조치: (a) 컨피그의 model 값을 변경 (b) 어댑터(adapters/claude/) 지원 모델 목록을 갱신` 보고 후 해당 구간을 중단한다.
-4. 하네스 스킬 위치: 컨피그의 skills 중 `superpowers:` 접두사는 Skill 도구로 호출,
-   나머지(cost-bottleneck-check, design-doc, plan-doc, report-doc, obsidian-cli,
-   interactive-script, scope-splitter, set-initial)는 **하네스 루트 `skills/<이름>/SKILL.md`를 읽고
-   그 지침을 따른다.** 파일이 없으면 `HRN-E005` 보고.
+4. **스킬 위치 — 세 이름공간.** 컨피그의 `skills[]` 항목은 접두사로 갈린다:
+   - `superpowers:<이름>` → **Skill 도구**로 호출(파일 실존을 요구하지 않는다).
+   - `project:<이름>` → **프로젝트 소유 스킬**. `skills.project_path` 가 가리키는
+     디렉터리(프로젝트 루트 기준) 밑 `<이름>/SKILL.md` 를 읽는다.
+   - 접두사 없음 → **하네스 루트 `skills/<이름>/SKILL.md`가 기본**이고, 하네스에는 없고
+     프로젝트에만 있으면 프로젝트 것을 쓴다.
+
+   **`skills.project_path` 해석**(§1-5 원칙): 값이 없거나 `null` 이면 프로젝트 스킬을
+   **탐색하지 않는다.** 켜는 것이 명시적 선택이어야 한다 — 기본을 `skills` 로 두면
+   `skills/` 디렉터리를 가진 기존 설치본이 업데이트만 했는데 해석이 바뀐다.
+
+   **이름이 양쪽에 있으면 `HRN-E015` 로 차단한다.** 조용히 한쪽을 가리지 않는다 —
+   어느 쪽인지 컨피그가 말하게 한다. `project:` 접두사는 그 **충돌을 푸는 수단**이지
+   프로젝트 스킬의 상시 요구사항이 아니다. 어느 쪽에도 없으면 `HRN-E005` 보고.
    - **전제 깨짐 (superpowers 미설치, PRD R4·R6, `HRN-W014`):** Skill 도구로 `superpowers:` 스킬을 호출했는데 "해당 스킬 없음"으로 실패하면:
      ① silent 금지 — 즉시 `⚠️ HRN-W014 — superpowers 스킬 '<이름>' 미발견` 보고.
      ② **흐름을 막지 않는다.** 해당 구간을 그 스킬 없이 진행하고, 그 사실을 구간 보고에 명시한다.

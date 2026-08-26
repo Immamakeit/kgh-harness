@@ -102,6 +102,24 @@ def superpowers_state():
     return "notfound", manifest
 
 
+def project_skills_dir(cfg, config_path, source_dir):
+    """프로젝트 스킬 디렉터리 절대경로. 미지정이면 None.
+
+    소스 레포에서는 프로젝트 루트와 source_dir 가 **같은 디렉터리**다. 그대로 두면
+    번들 스킬 전부가 '양쪽에 존재'로 판정돼 HRN-E015 가 스킬 수만큼 터진다 —
+    realpath 가 같으면 한 곳으로 취급해 그 오판을 막는다(설계 §3-1 도그푸딩 함정).
+    """
+    raw = (cfg.get("skills") or {}).get("project_path")
+    if not raw:
+        return None
+    project_root = os.path.dirname(os.path.abspath(config_path))
+    pj = os.path.join(project_root, str(raw))
+    hn = os.path.join(source_dir, "skills")
+    if os.path.realpath(pj) == os.path.realpath(hn):
+        return None
+    return pj
+
+
 def check_type(val, spec, where):
     """타입·허용값 검사. 위반 시 사유 문자열, 통과 시 None."""
     t = spec.get("type")
@@ -225,18 +243,55 @@ def main(config_path, schema_path, adapter_dir, source_dir):
                       f"지원되지 않아 무시됩니다 — 지정된 곳: {', '.join(used)}{C_RST}")
 
     # ── ③ 참조 실존 ───────────────────────────────────────────────────────
+    # 스킬 이름은 세 이름공간에서 온다:
+    #   superpowers:<이름>  → 외부 플러그인, 파일 실존을 요구하지 않는다
+    #   project:<이름>      → 프로젝트 소유. 충돌을 푸는 수단이지 상시 요구가 아니다
+    #   <이름>              → 하네스 소유가 기본. 프로젝트에만 있으면 그쪽을 쓴다
+    # 프로젝트 루트는 컨피그 파일이 있는 곳이다 — harness.config.yaml 은 항상
+    # 프로젝트 루트에 있으므로(install/setup 계약) 새 관례를 만들지 않는다.
+    project_dir = project_skills_dir(cfg, config_path, source_dir)
+
     sp_refs = []   # (구간, 스킬명) — 루프에서 수집만 한다
     for name, body in (cfg.get("stages") or {}).items():
         for s in ((body or {}).get("skills") or []):
             checked += 1
-            if str(s).startswith("superpowers:"):
-                sp_refs.append((name, str(s).split(":", 1)[1]))
+            ref = str(s)
+            if ref.startswith("superpowers:"):
+                sp_refs.append((name, ref.split(":", 1)[1]))
                 continue
-            path = os.path.join(source_dir, "skills", str(s), "SKILL.md")
-            if not os.path.isfile(path):
-                err("E005", f"stages.{name}: 스킬 '{s}' 의 파일 미발견 ({path})",
+
+            forced_project = ref.startswith("project:")
+            bare = ref.split(":", 1)[1] if forced_project else ref
+
+            hn_path = os.path.join(source_dir, "skills", bare, "SKILL.md")
+            pj_path = os.path.join(project_dir, bare, "SKILL.md") if project_dir else None
+
+            in_hn = os.path.isfile(hn_path)
+            in_pj = bool(pj_path) and os.path.isfile(pj_path)
+
+            if forced_project:
+                # 명시했으므로 하네스 쪽은 보지 않는다 — 충돌은 이미 풀린 상태다
+                if not in_pj:
+                    where = pj_path or "skills.project_path 미지정"
+                    err("E005", f"stages.{name}: 프로젝트 스킬 '{bare}' 의 파일 미발견 ({where})",
+                        f"skills.project_path 를 프로젝트 스킬 디렉터리로 지정하세요",
+                        f"의도한 스킬이라면 그 경로에 {bare}/SKILL.md 를 만드세요")
+                continue
+
+            if in_hn and in_pj:
+                err("E015",
+                    f"stages.{name}: 스킬 '{bare}' 가 하네스와 프로젝트 양쪽에 존재"
+                    f" ({hn_path} · {pj_path})",
+                    f"프로젝트 것을 쓰려면 stages.{name}.skills 에 'project:{bare}' 로 적으세요",
+                    f"하네스 것을 쓰려면 프로젝트의 {bare} 스킬 이름을 바꾸거나"
+                    f" skills.project_path 를 비우세요")
+                continue
+
+            if not in_hn and not in_pj:
+                extra = f" · {pj_path}" if pj_path else " (skills.project_path 미지정)"
+                err("E005", f"stages.{name}: 스킬 '{s}' 의 파일 미발견 ({hn_path}{extra})",
                     f"stages.{name}.skills 의 스킬명 철자를 고치세요",
-                    f"의도한 스킬이라면 skills/{s}/SKILL.md 를 만드세요")
+                    f"프로젝트 소유 스킬이라면 skills.project_path 를 지정하세요")
 
     # 루프 밖: superpowers 설치 상태를 한 번만 판정해 한 번만 보고한다
     if sp_refs:

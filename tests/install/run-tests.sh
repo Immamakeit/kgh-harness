@@ -1173,6 +1173,62 @@ SK
   # 에러가 지목하는 경로가 .harness/skills/ 라는 것이 "프로젝트 경로를 안 본다"의 증거다
   assert_contains "$(cat "$log")" ".harness/skills/myskill/SKILL.md" \
     "에러가 하네스 경로만 지목 (프로젝트 경로 미탐색의 증거)"
+
+  # ── T2: skills.project_path 로 프로젝트 경로를 연다 ─────────────────────
+  local cfg="${t}/harness.config.yaml"
+
+  # (1) project_path 를 켜면 통과한다
+  { cat "$cfg"; printf 'skills:\n  project_path: skills\n'; } > "${t}/on.yaml"
+  if "${t}/.harness/install/validate-config" "${t}/on.yaml" >"${t}/on.log" 2>&1; then
+    pass_case "skills.project_path 지정 시 프로젝트 스킬 참조 통과"
+  else
+    fail_case "skills.project_path 지정 시 프로젝트 스킬 참조 통과" \
+      "exit=$? — $(tail -3 "${t}/on.log")"
+  fi
+
+  # (2) 하위호환 — project_path 가 없으면 T1 과 똑같이 차단된다.
+  #     기본값을 'skills' 로 두면 skills/ 를 가진 기존 설치본의 해석이 조용히 바뀐다.
+  if "${t}/.harness/install/validate-config" "$cfg" >"${t}/off.log" 2>&1; then
+    fail_case "project_path 부재 시 기존 동작 유지 (차단)" "exit 0 으로 통과함"
+  else
+    assert_contains "$(cat "${t}/off.log")" "HRN-E005" \
+      "project_path 부재 → 기존대로 HRN-E005 (하위호환)"
+  fi
+
+  # (3) 이름 충돌 → HRN-E015 차단. 조용히 가려지지 않는다.
+  mkdir -p "${t}/skills/design-doc"
+  printf -- '---\nname: design-doc\n---\n' > "${t}/skills/design-doc/SKILL.md"
+  if "${t}/.harness/install/validate-config" "${t}/on.yaml" >"${t}/dup.log" 2>&1; then
+    fail_case "이름 충돌 → HRN-E015 차단" "exit 0 으로 통과함"
+  else
+    assert_contains "$(cat "${t}/dup.log")" "HRN-E015" "이름 충돌 → HRN-E015"
+    assert_contains "$(cat "${t}/dup.log")" "design-doc" "충돌한 이름을 그대로 지목"
+  fi
+
+  # (4) project: 접두사로 충돌을 푼다
+  sed 's/skills: \[design-doc\]/skills: [project:design-doc]/' "${t}/on.yaml" > "${t}/pfx.yaml"
+  if "${t}/.harness/install/validate-config" "${t}/pfx.yaml" >"${t}/pfx.log" 2>&1; then
+    pass_case "project: 접두사로 충돌 해소"
+  else
+    fail_case "project: 접두사로 충돌 해소" "exit=$? — $(tail -3 "${t}/pfx.log")"
+  fi
+
+  # (5) project: 접두사인데 프로젝트 경로가 꺼져 있으면 E005
+  sed 's/skills: \[design-doc\]/skills: [project:design-doc]/' "$cfg" > "${t}/pfx-off.yaml"
+  if "${t}/.harness/install/validate-config" "${t}/pfx-off.yaml" >"${t}/pfxoff.log" 2>&1; then
+    fail_case "project: 접두사 + project_path 꺼짐 → 차단" "exit 0 으로 통과함"
+  else
+    assert_contains "$(cat "${t}/pfxoff.log")" "HRN-E005" \
+      "project: 접두사인데 경로 미지정 → HRN-E005"
+  fi
+
+  # (6) 결합부 — 플레이북 §1-4 가 같은 계약을 말하는가 (한 곳만 고치면 실행이 못 찾는다)
+  local pb_flat
+  pb_flat="$(tr '\n' ' ' < "${REPO_ROOT}/core/playbook.md" | tr -s ' ')"
+  assert_contains "$pb_flat" "skills.project_path" "플레이북 §1-4: skills.project_path 조항 실존"
+  assert_regex "$pb_flat" 'project:[^~]{0,200}(충돌|양쪽)' \
+    "플레이북 §1-4: project: 접두사의 용도(충돌 해소) 실존"
+  assert_contains "$pb_flat" "HRN-E015" "플레이북 §1-4: HRN-E015 실존"
 }
 
 # ---- preference-options ↔ set-initial 통합 계약 (국면 C T10) ----------------
