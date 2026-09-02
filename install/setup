@@ -367,6 +367,61 @@ META_FILE="${HARNESS_DIR}/.meta"
 ok ".meta 기록: ${META_FILE}"
 echo
 
+# ---- 7c. 대상 .gitignore 처리 ------------------------------------------------
+# 설치본(.harness/ 밑 배포물)이 대상 저장소 diff 를 오염시키지 않게 한 번 묻는다.
+# 이 절은 **설치 스크립트가 대상 저장소의 파일을 고치는 유일한 자리**다 —
+# 그래서 (a) git 저장소가 아니면 손대지 않고 (b) 이미 있는 항목은 다시 넣지 않으며
+# (c) 사용자가 거절하면 아무것도 바꾸지 않고 (d) 무엇을 했는지 요약에 남긴다.
+# /.harness/work/ 는 **제외하지 않는다** — 작업 산출물은 프로젝트 자산이다
+# (이 레포가 자기 .gitignore 에 남긴 판단과 같다).
+
+GITIGNORE_STATUS="건너뜀 (git 저장소 아님)"
+TARGET_GITIGNORE="${TARGET_DIR}/.gitignore"
+
+if command -v git >/dev/null 2>&1 && git -C "$TARGET_DIR" rev-parse --git-dir >/dev/null 2>&1; then
+  say "설치본(.harness/ 밑 배포물)을 이 저장소 git 에 커밋할까요?"
+  GI_PICK="$(ask_choice "선택" 1 \
+    "커밋 안 함 — .gitignore 에 설치본 경로를 추가한다 (추천)" \
+    "커밋함 — .gitignore 를 바꾸지 않는다")"
+
+  if [ "$GI_PICK" = "1" ]; then
+    GI_CREATED="no"
+    if [ ! -f "$TARGET_GITIGNORE" ]; then
+      : > "$TARGET_GITIGNORE"
+      GI_CREATED="yes"
+    fi
+    GI_ADDED=0
+    for pat in /.harness/install/ /.harness/adapters/ /.harness/core/ \
+               /.harness/skills/ /.harness/templates/ /.harness/config/ /.harness/.meta; do
+      if ! grep -qxF "$pat" "$TARGET_GITIGNORE"; then
+        if [ "$GI_ADDED" -eq 0 ]; then
+          {
+            printf '\n'
+            printf '# 하네스 설치 산출물 — 소스에서 재생성되므로 커밋하지 않는다.\n'
+            printf '# (.harness/work/ 는 의도적으로 제외하지 않는다 — 작업 문서는 프로젝트 자산)\n'
+          } >> "$TARGET_GITIGNORE"
+        fi
+        printf '%s\n' "$pat" >> "$TARGET_GITIGNORE"
+        GI_ADDED=$((GI_ADDED + 1))
+      fi
+    done
+    if [ "$GI_CREATED" = "yes" ]; then
+      ok ".gitignore 를 새로 만들고 설치본 경로 ${GI_ADDED}개를 추가했습니다: ${TARGET_GITIGNORE}"
+      GITIGNORE_STATUS="신규 생성 + ${GI_ADDED}개 추가"
+    elif [ "$GI_ADDED" -gt 0 ]; then
+      ok ".gitignore 에 설치본 경로 ${GI_ADDED}개를 추가했습니다: ${TARGET_GITIGNORE}"
+      GITIGNORE_STATUS="${GI_ADDED}개 추가"
+    else
+      ok ".gitignore 에 설치본 경로가 이미 전부 있습니다 (변경 없음)"
+      GITIGNORE_STATUS="이미 적용됨 (변경 없음)"
+    fi
+  else
+    note ".gitignore 를 바꾸지 않았습니다 — 설치본이 이 저장소 커밋에 포함됩니다."
+    GITIGNORE_STATUS="사용자 선택으로 미적용"
+  fi
+  echo
+fi
+
 # ---- 7b. 컨피그 검증 ---------------------------------------------------------
 
 CONFIG_VALID="미실행"
@@ -399,6 +454,7 @@ say "컨피그      : ${CONFIG_STATUS} (${TARGET_CONFIG})"
 say "SessionStart 훅: ${HOOK_STATUS}"
 say "superpowers : ${SUPERPOWERS_STATUS}"
 say "컨피그 검증: ${CONFIG_VALID}"
+say ".gitignore  : ${GITIGNORE_STATUS}"
 echo
 say "다음 할 일:"
 if [ "$CONFIG_CREATED" -eq 1 ] && [ -z "$VAULT_ROOT" ]; then

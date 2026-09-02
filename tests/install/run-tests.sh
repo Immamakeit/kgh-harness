@@ -1305,6 +1305,68 @@ sys.stdout.write("".join(out))
 PYEOF
 }
 
+# ---- setup 의 .gitignore 안내 (project-conventions T8) ----------------------
+# **설치 스크립트가 대상 저장소의 파일을 고치는 첫 사례다.** 지금까지는
+# harness.config.yaml 생성뿐이었다. 되돌릴 길(중복 방지·거절 시 무변경)과
+# 비대화형 폴백이 핵심이라 통합 실행으로 검증한다.
+test_setup_gitignore() {
+  group "setup — 대상 .gitignore 안내"
+
+  # (1) git 저장소 대상 + 기본 선택(비대화형) → 설치본 경로가 .gitignore 에 들어간다
+  local g1
+  g1="$(mktemp -d "${WORK}/gi1.XXXXXX")"
+  git -C "$g1" init -q
+  printf 'node_modules/\n' > "${g1}/.gitignore"
+  ( cd "$REPO_ROOT" && ./install/setup "$g1" </dev/null >"${WORK}/gi1.log" 2>&1 )
+  assert_contains "$(cat "${g1}/.gitignore")" "/.harness/install/" \
+    ".gitignore 에 설치본 경로 추가됨"
+  assert_contains "$(cat "${g1}/.gitignore")" "node_modules/" "기존 .gitignore 내용 보존"
+  # 작업 산출물은 프로젝트 자산이라 제외하지 않는다
+  assert_not_contains "$(cat "${g1}/.gitignore")" "/.harness/work/" \
+    ".harness/work/ 는 제외 목록에 넣지 않음 (작업 산출물은 프로젝트 자산)"
+
+  # (2) 재설치 → 중복 추가 없음
+  ( cd "$REPO_ROOT" && ./install/setup "$g1" </dev/null >/dev/null 2>&1 )
+  local n
+  n="$(grep -c '^/\.harness/install/$' "${g1}/.gitignore" || true)"
+  assert_eq "$n" "1" "재설치해도 중복 추가 없음"
+
+  # (3) .gitignore 가 없던 대상 → 새로 만들고 그 사실을 보고
+  local g2
+  g2="$(mktemp -d "${WORK}/gi2.XXXXXX")"
+  git -C "$g2" init -q
+  ( cd "$REPO_ROOT" && ./install/setup "$g2" </dev/null >"${WORK}/gi2.log" 2>&1 )
+  assert_present "${g2}/.gitignore" ".gitignore 가 없으면 새로 만든다"
+  assert_contains "$(cat "${WORK}/gi2.log")" ".gitignore" "생성 사실을 보고에 남김"
+
+  # (4) git 저장소가 아니면 질문 자체를 건너뛰고 파일을 만들지 않는다
+  local g3
+  g3="$(mktemp -d "${WORK}/gi3.XXXXXX")"
+  ( cd "$REPO_ROOT" && ./install/setup "$g3" </dev/null >"${WORK}/gi3.log" 2>&1 )
+  assert_absent "${g3}/.gitignore" "비-git 대상에는 .gitignore 를 만들지 않음"
+
+  # (5) 설치 요약에 처리 결과가 남는다 (결과 비은닉)
+  assert_contains "$(cat "${WORK}/gi1.log")" "gitignore" "설치 요약에 .gitignore 처리 결과 명시"
+
+  # (6) **거절 경로** — 사용자가 2)를 고르면 아무것도 바꾸지 않는다.
+  #     파이프로는 ask_choice 가 비대화형 폴백(기본 1)을 타므로 확인할 수 없다.
+  #     pty 를 붙여야 실제 선택 경로가 돈다 — 이 절이 대상 저장소 파일을 고치는
+  #     유일한 자리라서, "거절하면 무변경"은 실물로 확인해야 하는 계약이다.
+  local g4 before4
+  g4="$(mktemp -d "${WORK}/gi4.XXXXXX")"
+  git -C "$g4" init -q
+  printf 'foo/\n' > "${g4}/.gitignore"
+  before4="$(cat "${g4}/.gitignore")"
+  local mp4
+  mp4="$(build_min_path gi4)"
+  # 입력 순서: 설치확인 Enter → vault 경로 → .gitignore 선택 2
+  run_with_tty '\n/tmp/gi4-vault\n2\n' \
+    "export PATH=${mp4}; cd ${REPO_ROOT}; ./install/setup ${g4}" \
+    > "${WORK}/gi4.log" 2>&1 || true
+  assert_eq "$(cat "${g4}/.gitignore")" "$before4" "거절(2) 시 .gitignore 무변경"
+  assert_not_contains "$(cat "${g4}/.gitignore")" ".harness" "거절 시 설치본 경로 미추가"
+}
+
 # ---- 작업 문서 이름 소유권 (project-conventions T5) -------------------------
 # 문서 계약 단언이다 — 이 파일들은 LLM 이 읽는 지침이라 셸로 행동 검증이 불가능하다
 # (agent-mode·preference-options 에서 확립된 방식). 여기서 막는 것은 "컨피그가
@@ -1883,6 +1945,7 @@ test_question_label_contracts
 test_preference_integration_contracts
 test_project_skills_resolution
 test_workdocs_naming_ownership
+test_setup_gitignore
 test_playbook_cross_refs
 test_ask_choice
 test_detect_obsidian_vaults
