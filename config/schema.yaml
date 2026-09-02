@@ -12,6 +12,7 @@ top_level:
   bootstrap:      { type: map,    required: false }
   preferences:    { type: map,    required: false }
   skills:         { type: map,    required: false }
+  commit:         { type: map,    required: false }
   agent_mode:     { type: enum, values: [single, multi], default: multi, validated_by: schema }
   # 주의: top_level 스칼라 값은 구조(키 존재)만 검사된다 — validate_config.py 는
   # top_level 에 대해 필수 여부만 확인하고 enum 값 자체는 검사하지 않는다
@@ -90,3 +91,11 @@ skills:
   # 'skills' 로 두면 skills/ 디렉터리를 가진 기존 설치본이 업데이트만 했는데 해석
   # 경로가 바뀌고, 이름이 겹치면 검증이 막힌다 — 켜는 것은 명시적 선택이어야 한다.
   project_path: { type: string, default: null, nullable: true }
+
+commit:
+  # 커밋 규약은 **프로젝트가 소유한다.** 검증기는 구조만 본다 — format 에 {type}·{message}
+  # 치환자가 있는지, types 가 비어 있지 않은지까지다. 어떤 작업유형이 옳은지는 검사하지
+  # 않는다(저장소마다 다르고, 하네스가 남의 이력에 자기 취향을 남길 이유가 없다).
+  # 기본값은 하네스 현행과 같아, 지정하지 않으면 지금까지와 동일하게 동작한다.
+  format: { type: string, default: "[{type}]: {message}" }
+  types:  { type: list, default: [feat, fix, refactor, docs, test, chore, style] }

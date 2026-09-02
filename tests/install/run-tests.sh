@@ -994,6 +994,50 @@ PYEOF
     pass_case "스키마에서 storage.docs 제거됨"
   fi
 
+  # ── commit.format · commit.types (project-conventions T7) ──────────────
+  # 검증기는 **구조만** 본다 — 어떤 작업유형이 옳은지는 프로젝트가 소유한다.
+  # 그 계약 자체를 케이스로 고정해, 나중에 과잉 검증이 끼어들지 못하게 한다.
+
+  # (32) 기본값(하네스 현행 형식) → 통과
+  if "$vc" "${REPO_ROOT}/harness.config.yaml" >"${dir}/cm-def.log" 2>&1; then
+    pass_case "commit 기본값 → 통과"
+  else
+    fail_case "commit 기본값 → 통과" "exit=$? — $(tail -3 "${dir}/cm-def.log")"
+  fi
+  assert_contains "$(cat "${REPO_ROOT}/harness.config.yaml")" "commit:" "루트 컨피그에 commit 블록 실존"
+  assert_contains "$(cat "${REPO_ROOT}/config/harness.config.template.yaml")" "commit:" \
+    "배포 템플릿에 commit 블록 실존"
+
+  # (33) 대괄호 없는 형식(후보 저장소 규약) → 통과
+  cm_fixture "$REPO_ROOT" '"{type}: {message}"' "feat, fix, merge" > "${dir}/cm-plain.yaml"
+  if "$vc" "${dir}/cm-plain.yaml" >"${dir}/cm-plain.log" 2>&1; then
+    pass_case "commit.format 대괄호 없는 형식 → 통과"
+  else
+    fail_case "commit.format 대괄호 없는 형식 → 통과" "exit=$? — $(tail -3 "${dir}/cm-plain.log")"
+  fi
+
+  # (34) 치환자가 빠진 format → 차단
+  cm_fixture "$REPO_ROOT" '"고정 메시지"' "feat, fix" > "${dir}/cm-noph.yaml"
+  if "$vc" "${dir}/cm-noph.yaml" >"${dir}/cm-noph.log" 2>&1; then
+    fail_case "commit.format 치환자 누락 → 차단" "exit 0 으로 통과함"
+  else
+    assert_contains "$(cat "${dir}/cm-noph.log")" "HRN-E004" "치환자 누락 → HRN-E004"
+    assert_contains "$(cat "${dir}/cm-noph.log")" "{type}" "누락된 치환자를 그대로 지목"
+  fi
+
+  # (35) 빈 types → 차단
+  cm_fixture "$REPO_ROOT" '"[{type}]: {message}"' "" > "${dir}/cm-empty.yaml"
+  if "$vc" "${dir}/cm-empty.yaml" >"${dir}/cm-empty.log" 2>&1; then
+    fail_case "commit.types 비어 있음 → 차단" "exit 0 으로 통과함"
+  else
+    assert_contains "$(cat "${dir}/cm-empty.log")" "HRN-E004" "빈 commit.types → HRN-E004"
+  fi
+
+  # (36) 플레이북이 형식을 하드코딩하지 않고 commit.format 을 참조한다
+  local pb2_flat
+  pb2_flat="$(tr '\n' ' ' < "${REPO_ROOT}/core/playbook.md" | tr -s ' ')"
+  assert_contains "$pb2_flat" "commit.format" "플레이북 §6: commit.format 참조 실존"
+
   # (27) 배포 템플릿의 as_recommended 는 꺼진 채로 나간다 — 설치하자마자 질문이
   #      자동으로 건너뛰어지면 새 사용자에게 가장 놀랍다(설계 §3-3 안전측 기본).
   assert_regex "$(grep -E '^\s*as_recommended:' "${REPO_ROOT}/config/harness.config.template.yaml")" \
@@ -1226,6 +1270,30 @@ for line in io.open(src, encoding="utf-8"):
             out.append("  names:\n")
             for n in names.split("|"):
                 out.append("    %s\n" % n)
+        continue
+    if skip:
+        if line.strip() == "" or not line.startswith(" "):
+            skip = False
+        else:
+            continue
+    out.append(line)
+sys.stdout.write("".join(out))
+PYEOF
+}
+
+# cm_fixture <레포루트> <format> <types 쉼표구분>
+# 루트 컨피그의 commit 블록을 통째로 갈아끼운다(wd_fixture 와 같은 이유).
+cm_fixture() {
+  python3 - "$1" "$2" "$3" <<'PYEOF'
+import io, sys
+src, fmt, types = sys.argv[1] + "/harness.config.yaml", sys.argv[2], sys.argv[3]
+out, skip = [], False
+for line in io.open(src, encoding="utf-8"):
+    if line.startswith("commit:"):
+        skip = True
+        out.append("commit:\n")
+        out.append("  format: %s\n" % fmt)
+        out.append("  types: [%s]\n" % types)
         continue
     if skip:
         if line.strip() == "" or not line.startswith(" "):

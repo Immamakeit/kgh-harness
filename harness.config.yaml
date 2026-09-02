@@ -45,6 +45,12 @@ preferences:                     # 선호 기반 옵션 추천 (preference-optio
                                   # 주의: 이 값도 검증기가 검사하지 않는다 — true 가 아닌
                                   # 값은(부재·오타 포함) 전부 false 로 취급된다(write_to 와 반대)
 
+commit:                          # 커밋 규약 — 프로젝트가 소유한다
+  format: "[{type}]: {message}"  # 기본 = 하네스 현행. 예) "{type}: {message}" 면 feat: 로그인 추가
+  types: [feat, fix, refactor, docs, test, chore, style]
+                                 # 검증기는 구조만 본다 — 치환자 실존 + types 비어 있지 않음.
+                                 # 어떤 유형이 옳은지는 검사하지 않는다(저장소마다 다르다)
+
 stages:
   entry_gate:                    # ① 입구 판단 게이트 — 판단형 요청일 때만
     enabled: conditional

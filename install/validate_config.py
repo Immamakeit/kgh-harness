@@ -261,6 +261,34 @@ def main(config_path, schema_path, adapter_dir, source_dir):
                     f"workdocs.names 에 {', '.join(missing)} 를 추가하세요",
                     "일부만 바꿀 수는 없습니다 — 기본값을 쓰려면 workdocs.names 를 통째로 지우세요")
 
+    # ── ②-c commit 규약 구조 ───────────────────────────────────────────────
+    # 값의 내용(어떤 작업유형이 옳은가)은 프로젝트가 소유한다 — 여기서 보는 것은
+    # "이 컨피그로 커밋 메시지를 만들 수 있는가"뿐이다. 치환자가 빠지면 모든 커밋이
+    # 같은 문자열이 되고, types 가 비면 고를 유형이 없다. 둘 다 조용히 넘기면
+    # 그 결과가 커밋 이력에 남아 되돌리기 어렵다.
+    commit_cfg = cfg.get("commit")
+    if commit_cfg is not None:
+        checked += 1
+        if not isinstance(commit_cfg, dict):
+            err("E004", "commit: 매핑이 아님",
+                "commit 을 format/types 키를 가진 매핑으로 적으세요",
+                "커밋 규약을 바꾸지 않을 거라면 commit 블록을 통째로 지우세요")
+        else:
+            fmt = commit_cfg.get("format")
+            if fmt is not None:
+                missing_ph = [ph for ph in ("{type}", "{message}") if ph not in str(fmt)]
+                if missing_ph:
+                    err("E004",
+                        f"commit.format: 치환자 {', '.join(missing_ph)} 누락 ('{fmt}')",
+                        f"commit.format 에 {', '.join(missing_ph)} 를 넣으세요"
+                        " (예: \"{type}: {message}\")",
+                        "기본 형식을 쓰려면 commit.format 을 지우세요")
+            types = commit_cfg.get("types")
+            if types is not None and (not isinstance(types, list) or not types):
+                err("E004", "commit.types: 비어 있거나 목록이 아님",
+                    "commit.types 에 이 저장소가 쓰는 작업유형을 하나 이상 적으세요",
+                    "기본 목록을 쓰려면 commit.types 를 지우세요")
+
     # ── ③ 참조 실존 ───────────────────────────────────────────────────────
     # 스킬 이름은 세 이름공간에서 온다:
     #   superpowers:<이름>  → 외부 플러그인, 파일 실존을 요구하지 않는다
