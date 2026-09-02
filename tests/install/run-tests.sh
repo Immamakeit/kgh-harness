@@ -1621,9 +1621,16 @@ test_preference_integration_contracts() {
   prd_flat="$(tr '\n' ' ' < "$prd" | tr -s ' ')"
 
   local key
-  for key in "agent_mode" "preferences.write_to" "preferences.as_recommended"; do
+  for key in "agent_mode" "preferences.write_to" "preferences.as_recommended" \
+             "skills.project_path" "workdocs.names" "commit.format"; do
     assert_contains "$rd_flat" "$key" "README 설정 표에 '${key}' 실존"
   done
+
+  # HRN-E015 는 PRD §8 에 등재돼야 한다 — 코드가 내는 코드인데 표에 없으면
+  # 사용자가 받은 에러의 뜻과 복구 경로를 찾을 곳이 없다.
+  assert_contains "$prd_flat" "HRN-E015" "PRD §8 에 HRN-E015 행 실존"
+  assert_regex "$prd_flat" 'HRN-E015[^|]{0,200}\|[^|]{0,300}\|[^|]{0,400}(project:|project_path)' \
+    "HRN-E015 행에 복구 경로(project: 접두사 / project_path)가 실존"
 
   # (예정) 표기 제거 — 코드가 실제로 구현됐는데 문서가 '예정'이라 적혀 있으면 거짓이다
   assert_regex "$prd_flat" 'HRN-W017[^|]{0,40}\|' "PRD: HRN-W017 행 실존"

@@ -158,17 +158,46 @@ rm -rf ~/dev/내프로젝트/.harness ~/dev/내프로젝트/harness.config.yaml
 | `agent_mode` | `multi`(기본)면 일부 구간을 서브에이전트로 돌린다. `single`이면 전부 메인 세션에서 한다 |
 | `preferences.write_to` | 선택 이력을 어디에 쌓을지. `global`(기본)은 `~/.claude/harness/`, `project`는 `<프로젝트>/.harness/` |
 | `preferences.as_recommended` | `true`면 번호 선택형 질문을 추천대로 자동 채택하고 무엇을 왜 골랐는지 표로 남긴다. 기본은 `false` |
+| `skills.project_path` | 이 프로젝트가 가진 스킬 디렉터리(예: `skills`). 지정하면 하네스 스킬과 함께 찾는다. 비워두면(기본) 프로젝트 스킬을 찾지 않는다 |
+| `workdocs.names` | 작업 문서 3종의 파일명. 역할(`design`·`plan`·`report`)은 고정이고 이름만 바꾼다. 셋 다 적거나, 통째로 지우거나 |
+| `commit.format` · `commit.types` | 커밋 메시지 형식과 작업유형 목록. 기본은 `[{type}]: {message}` |
 | `stages.<구간>.gate` | `required`면 사용자 승인까지 멈춘다 |
 | `stages.<구간>.skills` | 그 구간에서 쓸 스킬 |
 
 고친 뒤에는 `.harness/install/validate-config`로 검증한다.
+
+### 이미 쓰던 프로젝트에 얹을 때
+
+하네스는 자기 규약을 강요하지 않는다. 이미 있는 것을 **가리키게** 만들면 된다.
+
+```yaml
+skills:
+  project_path: skills              # 이 저장소가 이미 가진 스킬들
+workdocs:
+  path: docs                        # 이미 쓰던 문서 디렉터리
+  layout: "<작업명>/<YYYY-MM-DD>"
+  names:
+    design: design.md
+    plan:   plan.md
+    report: report.md
+commit:
+  format: "{type}: {message}"       # 이 저장소의 기존 커밋 형식
+  types: [feat, fix, docs, test, chore, merge]
+stages:
+  implement:
+    skills: [project:tdd-augment-coding]   # 하네스 것 대신 이 저장소 것
+```
+
+스킬 이름이 하네스와 겹치면 `HRN-E015`로 **막고 물어본다** — 조용히 한쪽을 가리지
+않는다. `project:` 접두사로 어느 쪽인지 말해주면 된다.
 
 > **모르는 값을 만나면 어떻게 되나** — 검증기는 위 세 키의 *값*까지는 검사하지 않는다.
 > 오타를 냈을 때 어느 쪽으로 떨어지는지는 키마다 다르고, 기준은 하나다: **덜 놀라운 쪽.**
 > `agent_mode`는 `single`이 아니면 `multi`(하던 대로), `bootstrap.prompt`는 `off`가
 > 아니면 `ask`(한 번 더 묻는다), `preferences.write_to`는 `project`가 아니면
 > `global`(남의 git 히스토리에 이력을 흘리지 않는다), `preferences.as_recommended`는
-> `true`가 아니면 `false`(질문을 건너뛰지 않는다).
+> `true`가 아니면 `false`(질문을 건너뛰지 않는다), `skills.project_path`는
+> 비어 있으면 프로젝트 스킬을 찾지 않는다(켜는 것이 명시적 선택이어야 한다).
 
 ## 에러 코드
 

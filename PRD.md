@@ -188,6 +188,7 @@ Claude/Codex의 모델명·규격은 변할 수 있다. 흐름 시작 시 Resolv
 | `HRN-E012` | gh 토큰 repo 스코프 없음 | gh auth refresh -s repo 또는 PAT 재발급 |
 | `HRN-E013` | 원격이 GitHub 아님/원격 없음 | GitHub 원격 추가 또는 해당 플랫폼 수동 설정 |
 | `HRN-E014` | 저장소 admin 권한 없음/조회 불가 | admin 계정 재인증 또는 admin에게 대신 요청 |
+| `HRN-E015` | 스킬 이름이 하네스와 프로젝트 양쪽에 존재 (차단) | 컨피그에 `project:<이름>` 으로 어느 쪽인지 명시, 또는 한쪽 스킬 이름 변경·`skills.project_path` 비우기 |
 | `HRN-W010` | `vault_root` 미지정 (경고, 비차단) | vault_root 지정 |
 | `HRN-W011` | Obsidian CLI 미가용(앱 꺼짐/미등록/미설치) → 파일 직접 쓰기로 폴백 (경고, 비차단) | Obsidian 앱 실행 후 재시도(CLI 이점 복원) 또는 폴백 결과 그대로 사용 |
 | `HRN-W012` | 프로젝트에 harness.config.yaml 없음 (경고, 비차단 — 플레이북 기본값으로 진행) | install/setup으로 컨피그 생성 |
