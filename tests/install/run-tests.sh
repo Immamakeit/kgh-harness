@@ -1005,6 +1005,13 @@ PYEOF
     fail_case "commit 기본값 → 통과" "exit=$? — $(tail -3 "${dir}/cm-def.log")"
   fi
   assert_contains "$(cat "${REPO_ROOT}/harness.config.yaml")" "commit:" "루트 컨피그에 commit 블록 실존"
+  # 스키마에만 키를 넣고 컨피그에는 안 넣으면 다음 사람이 문서를 보고 손으로 적어야 한다
+  # (preference-options T5 에서 세운 계약). ⑧ 검증에서 skills 키가 실제로 이 구멍에
+  # 빠져 있던 것을 발견해 단언으로 고정한다.
+  assert_contains "$(cat "${REPO_ROOT}/harness.config.yaml")" "project_path" \
+    "루트 컨피그에 skills.project_path 실존"
+  assert_contains "$(cat "${REPO_ROOT}/config/harness.config.template.yaml")" "project_path" \
+    "배포 템플릿에 skills.project_path 실존"
   assert_contains "$(cat "${REPO_ROOT}/config/harness.config.template.yaml")" "commit:" \
     "배포 템플릿에 commit 블록 실존"
 

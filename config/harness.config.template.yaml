@@ -49,6 +49,12 @@ preferences:                     # 선호 기반 옵션 추천 (preference-optio
                                   # 주의: 이 값도 검증기가 검사하지 않는다 — true 가 아닌
                                   # 값은(부재·오타 포함) 전부 false 로 취급된다(write_to 와 반대)
 
+skills:                          # 프로젝트 소유 스킬의 위치 (project-conventions)
+  project_path: null             # null(기본) = 프로젝트 스킬을 찾지 않는다
+                                 # 예: skills · .claude/skills — 프로젝트 루트 기준 상대경로
+                                 # 지정하면 하네스 스킬과 함께 찾고, 이름이 겹치면
+                                 # HRN-E015 로 막는다 — project:<이름> 으로 명시해 푼다
+
 commit:                          # 커밋 규약 — 프로젝트가 소유한다
   format: "[{type}]: {message}"  # 기본 = 하네스 현행. 예) "{type}: {message}" 면 feat: 로그인 추가
   types: [feat, fix, refactor, docs, test, chore, style]
