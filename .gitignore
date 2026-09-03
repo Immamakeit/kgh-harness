@@ -6,6 +6,10 @@ Thumbs.db
 .idea/
 .vscode/
 
+# 파이썬 바이트코드 캐시 — validate-config 를 돌리면 생긴다. 소스가 아니다.
+__pycache__/
+*.pyc
+
 # 로컬 전용 설정·비밀 (커밋 금지)
 *.local.yaml
 *.local.yml

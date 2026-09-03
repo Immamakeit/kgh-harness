@@ -1816,6 +1816,22 @@ test_public_distribution() {
   assert_present "${t1}/.harness/templates/설계.md" \
     "배포물에 문서 서식 폴백(templates/) 존재"
 
+  # (2b) 파이썬 바이트코드 캐시는 배포물에 들어가지 않는다.
+  #      소스 레포에서 validate-config 를 한 번만 돌려도 install/__pycache__ 가 생기고,
+  #      .harnessignore 에 항목이 없으면 그대로 대상에 복사된다 — CLAUDE.md §6 의
+  #      "개발용 파일이 설치 대상에서 발견되면 패키징 누출 버그" 에 해당한다.
+  #      (2026-09-03 실제로 누출을 확인하고 추가한 케이스)
+  python3 -m py_compile "${REPO_ROOT}/install/validate_config.py" 2>/dev/null || true
+  local t1b
+  t1b="$(mktemp -d "${WORK}/pub-t1b.XXXXXX")"
+  ( cd "$REPO_ROOT" && ./install/setup "$t1b" </dev/null >/dev/null 2>&1 )
+  assert_absent "${t1b}/.harness/install/__pycache__" "배포물에 __pycache__ 부재"
+  if find "${t1b}/.harness" -name '*.pyc' -print -quit 2>/dev/null | grep -q .; then
+    fail_case "배포물에 .pyc 부재" "$(find "${t1b}/.harness" -name '*.pyc' | head -1)"
+  else
+    pass_case "배포물에 .pyc 부재"
+  fi
+
   # (3) 새 대상 컨피그에 소스의 개인 vault 경로가 스며들지 않는다
   local src_vault
   src_vault="$(grep -E '^\s*vault_root:' "${REPO_ROOT}/harness.config.yaml" | sed 's/.*vault_root:[[:space:]]*//; s/[[:space:]]*#.*//; s/"//g')"

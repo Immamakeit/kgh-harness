@@ -10,6 +10,11 @@ CLAUDE.md
 # 대상 프로젝트의 컨피그는 config/harness.config.template.yaml 로부터 생성된다.
 /harness.config.yaml
 
+# 파이썬 바이트코드 캐시 — 소스 레포에서 validate-config 를 한 번만 돌려도
+# install/__pycache__ 가 생긴다. 대상에 복사되면 패키징 누출이다(CLAUDE.md §6).
+__pycache__/
+*.pyc
+
 # 버전관리 메타
 .git/
 .gitignore
