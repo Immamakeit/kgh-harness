@@ -1,0 +1,147 @@
+#!/usr/bin/env bash
+#
+# kgh-harness PreToolUse 훅 — ⑤ 설계 승인 게이트의 **집행체**.
+#
+# 플레이북 §2 는 "⑤ 승인 전 구현 금지"를 어떤 경우에도 생략 불가로 선언한다. 이 훅이
+# 없으면 그 선언은 프롬프트 텍스트일 뿐이고, 긴 세션에서 모델이 표류하면 그냥 구현한다.
+#
+# 무장 신호를 **파일에서 유도한다** (상태 파일·모델의 선언 없음):
+#   <workdocs.path>/<작업명>/<날짜>/ 에 설계 문서가 있고 .approved 가 없으면 → 승인 대기.
+# ⑤ 설계는 문서를 생산하는 구간이므로(플레이북 §5), 흐름이 ⑤를 지나면 무장은 모델의
+# 협조 없이 자동으로 일어난다. 이것이 이 설계의 핵심이다.
+#
+# 한계를 과장하지 않는다: 셸 경유 임의 수정(`python - <<EOF`, `cat >` 등)까지 전부
+# 봉쇄하지는 못한다. **표류를 잡는 장치지 적대적 우회를 막는 장치가 아니다.**
+#
+# 설치 스크립트에 의존하지 않는다(install/lib.sh 를 source 하지 않는다) — 설치가 깨져도
+# 게이트는 살아 있어야 하고, 매 도구 호출의 비용을 최소로 둬야 한다.
+#
+# 종료코드 계약 (Claude Code PreToolUse): 0 = 통과, 2 = 차단(stderr 가 모델에게 전달됨).
+# -e 를 쓰지 않는다: 게이트 자체의 어떤 실패도 작업을 세우지 않는다(fail-open, HRN-W021).
+set -uo pipefail
+
+INPUT="$(cat 2>/dev/null || true)"      # stdin 은 항상 먼저 비운다(SIGPIPE 방지)
+
+PROJECT_DIR="${CLAUDE_PROJECT_DIR:-$PWD}"
+CONFIG="${PROJECT_DIR}/harness.config.yaml"
+
+fail_open() {   # HRN-W021 — 판정 전제 미충족. 통과시키고 사실만 알린다(silent 금지).
+  printf '⚠️ HRN-W021 — 승인 게이트 판정 전제 미충족(%s) — 이번 호출은 통과시킵니다.\n' "$1" >&2
+  printf '   조치: (a) 위 사유를 고친 뒤 재시도 (b) 게이트 없이 진행 — 게이트 고장이 작업을 세우지 않습니다.\n' >&2
+  exit 0
+}
+
+# ---- YAML 스칼라 읽기 (중첩 경로 지원, 2칸 들여쓰기 전제) --------------------
+# 외부 의존 없이 돌아야 한다 — 이 훅은 매 도구 호출마다 실행된다.
+yaml_get() {
+  local file="$1" path="$2"
+  [ -f "$file" ] || return 1
+  awk -v path="$path" '
+    { raw = $0
+      sub(/#.*$/, "", raw)
+      if (raw ~ /^[[:space:]]*$/) next
+      n = match(raw, /[^ ]/); if (n == 0) next
+      ind = n - 1
+      rest = substr(raw, n)
+      if (substr(rest, 1, 1) == "-") next
+      ci = index(rest, ":"); if (ci == 0) next
+      key = substr(rest, 1, ci - 1)
+      val = substr(rest, ci + 1)
+      gsub(/^[ \t]+|[ \t]+$/, "", val)
+      gsub(/^"|"$/, "", val); gsub(/^'"'"'|'"'"'$/, "", val)
+      lvl = int(ind / 2)
+      stack[lvl] = key
+      for (i = lvl + 1; i < 10; i++) stack[i] = ""
+      cur = stack[0]
+      for (i = 1; i <= lvl; i++) cur = cur "." stack[i]
+      if (cur == path && val != "") { print val; exit }
+    }' "$file"
+}
+
+# ---- 1. 모드 판정 -----------------------------------------------------------
+# §1-5 해석 원칙: off·warn 이 아닌 모든 값(부재·오타 포함)은 block.
+# 안전 방향이 "멈춘다"쪽인 이유 — 승인 없이 구현이 나가는 쪽이, 한 번 더 멈춰서
+# approve 를 실행하게 하는 쪽보다 훨씬 놀랍다.
+MODE="$(yaml_get "$CONFIG" "gate.enforce" 2>/dev/null || true)"
+case "$MODE" in
+  off)  exit 0 ;;
+  warn) MODE="warn" ;;
+  *)    MODE="block" ;;
+esac
+
+# ---- 2. 무장 판정 (순수 bash 빠른 길 — 평시 비용 거의 0) --------------------
+WORKDOCS="$(yaml_get "$CONFIG" "workdocs.path" 2>/dev/null || true)"
+[ -n "$WORKDOCS" ] || WORKDOCS=".harness/work"
+DESIGN="$(yaml_get "$CONFIG" "workdocs.names.design" 2>/dev/null || true)"
+[ -n "$DESIGN" ] || DESIGN="설계.md"
+
+case "$WORKDOCS" in
+  /*) WORKROOT="$WORKDOCS" ;;
+  *)  WORKROOT="${PROJECT_DIR}/${WORKDOCS}" ;;
+esac
+
+[ -d "$WORKROOT" ] || exit 0            # 작업 디렉터리가 없다 = 흐름이 시작된 적 없다
+
+PENDING=""
+# layout 은 컨피그로 바뀔 수 있으므로 깊이를 고정하지 않고 설계 문서를 직접 찾는다.
+while IFS= read -r design_file; do
+  [ -n "$design_file" ] || continue
+  d="$(dirname "$design_file")"
+  [ -f "${d}/.approved" ] && continue
+  PENDING="$(basename "$(dirname "$d")")"
+  [ -n "$PENDING" ] || PENDING="$(basename "$d")"
+  PENDING_DIR="$d"
+  break
+done < <(find "$WORKROOT" -mindepth 1 -maxdepth 4 -type f -name "$DESIGN" 2>/dev/null)
+
+[ -n "$PENDING" ] || exit 0             # 승인 대기 작업 없음 → 미무장. 즉시 통과.
+
+# ---- 3. 차단 판정 (무장 상태에서만 비용을 낸다) -----------------------------
+VERDICT=""
+SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+DECIDER="${SCRIPT_DIR}/gate_decide.py"
+if command -v python3 >/dev/null 2>&1 && [ -f "$DECIDER" ]; then
+  # -I: 격리 모드. 훅은 임의 디렉터리에서 돌고 sys.path[0] 오염을 받을 이유가 없다.
+  VERDICT="$(printf '%s' "$INPUT" | python3 -I "$DECIDER" "$WORKROOT" "$PROJECT_DIR" 2>/dev/null)"
+fi
+
+if [ -z "$VERDICT" ]; then
+  # python3 부재·실패 → 휴리스틱으로 열화한다. 열화 사실을 숨기지 않는다.
+  TOOL_H="$(printf '%s' "$INPUT" | grep -oE '"tool_name"[[:space:]]*:[[:space:]]*"[A-Za-z_]+"' | head -n1 | grep -oE '"[A-Za-z_]+"$' | tr -d '"')"
+  case "$TOOL_H" in
+    Edit|Write|MultiEdit|NotebookEdit|Update)
+      PATH_H="$(printf '%s' "$INPUT" | grep -oE '"file_path"[[:space:]]*:[[:space:]]*"[^"]*"' | head -n1 | sed -E 's/.*:[[:space:]]*"//; s/"$//')"
+      case "$PATH_H" in
+        "$WORKROOT"/*|"$WORKDOCS"/*) VERDICT="ALLOW	작업 문서 안(휴리스틱)" ;;
+        *) VERDICT="BLOCK	${TOOL_H}	${PATH_H:-대상 미상}" ;;
+      esac
+      ;;
+    *) VERDICT="ALLOW	쓰기 도구 아님(휴리스틱)" ;;
+  esac
+  printf '⚠️ HRN-W021 — python3 가 없어 게이트가 휴리스틱 판정으로 열화했습니다.\n' >&2
+  printf '   조치: (a) python3 를 설치하면 정확 판정으로 돌아옵니다 (b) 그대로 진행 — 판정은 보수적입니다.\n' >&2
+fi
+
+case "$VERDICT" in
+  UNKNOWN*) fail_open "$(printf '%s' "$VERDICT" | cut -f2-)" ;;
+  ALLOW*)   exit 0 ;;
+esac
+
+BLOCKED_TOOL="$(printf '%s' "$VERDICT" | cut -f2)"
+BLOCKED_WHAT="$(printf '%s' "$VERDICT" | cut -f3)"
+
+if [ "$MODE" = "warn" ]; then
+  printf '⚠️ HRN-E016(warn) — ⑤ 설계 승인 전 구현입니다 (승인 대기: %s). gate.enforce 가 warn 이라 통과시킵니다.\n' "$PENDING" >&2
+  printf '   차단되지 않은 조작: %s %s\n' "$BLOCKED_TOOL" "$BLOCKED_WHAT" >&2
+  exit 0
+fi
+
+{
+  printf '❌ HRN-E016 — ⑤ 설계 승인 전에는 구현할 수 없습니다 (승인 대기: %s)\n' "$PENDING"
+  printf '   차단된 조작: %s %s\n' "$BLOCKED_TOOL" "$BLOCKED_WHAT"
+  printf '   설계 문서  : %s/%s\n' "$PENDING_DIR" "$DESIGN"
+  printf '   조치: (a) 사용자에게 설계를 제시해 승인을 받은 뒤 `.harness/install/approve %s` 를 실행하십시오\n' "$PENDING"
+  printf '         (b) 이 작업에 게이트를 적용하지 않으려면 harness.config.yaml 의 gate.enforce 를 off 로 바꾸십시오\n'
+  printf '   (작업 문서 자체는 계속 쓸 수 있습니다 — %s 밑은 차단 대상이 아닙니다)\n' "$WORKDOCS"
+} >&2
+exit 2
