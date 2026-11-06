@@ -1,8 +1,17 @@
 # kgh-harness
 
+> **개인 도구입니다.** 범용 제품이 아니라 한 사람의 작업 방식을 박아 넣은 개인
+> 하네스입니다. 전제가 환경에 박혀 있습니다 — **WSL**(Obsidian vault 자동 탐지) ·
+> **Obsidian**(산출물 저장) · **한국어**(플레이북·스킬·보고 전부). 호환성·지원·안정
+> 인터페이스를 약속하지 않고, 이슈·PR 대응도 약속하지 않습니다. 하던 대로 바꿉니다.
+>
+> 그래도 MIT입니다 — 쓸만한 부분(대화형 설치 스크립트, `HRN-*` 에러 계약, 승인 게이트)이
+> 있으면 **포크해서 고쳐 쓰는 편이** 맞습니다.
+
 Claude Code에 개발 워크플로를 얹는 하네스. 작업을 지시하면 판단 게이트 → 요구 파악 →
 영향도 → 설계 → 계획 → 구현 → 검증 → 보고 → 판정 → 저장 순으로 흐르고,
-설계 승인과 최종 판정에서만 사용자에게 묻는다. 구간별 스킬·모델·게이트는
+설계 승인과 최종 판정에서만 사용자에게 묻는다. **설계 승인은 훅이 집행한다** —
+승인 마커가 없으면 구현이 실제로 막힌다(아래 "승인 게이트"). 구간별 스킬·모델·게이트는
 프로젝트 루트의 `harness.config.yaml` 하나로 정한다.
 
 ---
@@ -33,7 +42,7 @@ cd /absolute/path/to/project && .harness/install/validate-config
 | 구분 | 항목 | 없으면 |
 |---|---|---|
 | 필수 | `bash`, `git`, `rsync` | 설치 중단 (`HRN-E008`) |
-| 권장 | `python3` | vault 경로 반영·훅 연결을 손으로 해야 한다 |
+| 권장 | `python3` | vault 경로 반영·훅 연결을 손으로 해야 한다. 승인 게이트는 휴리스틱 판정으로 열화한다(`HRN-W021`) |
 | 권장 | `PyYAML` (`pip install pyyaml`) | 컨피그 검증만 건너뛴다 (`HRN-W015`) |
 | 실행체 | [Claude Code](https://claude.com/claude-code) | 경고만 (`HRN-W013`) — 설치는 끝난다 |
 | 선택 | [superpowers](https://github.com/obra/superpowers-marketplace) | 그 스킬을 쓰는 구간만 스킬 없이 돈다 (`HRN-W014`) |
@@ -89,6 +98,40 @@ bootstrap:
 
 에이전트는 `.harness/skills/set-initial/SKILL.md` 를 읽고 그대로 따르면 된다.
 
+## 승인 게이트 — 설계 승인은 말로 끝나지 않는다
+
+⑤ 설계 승인은 **프롬프트 선언이 아니라 훅이 집행한다.** 설계 문서가 있고 승인
+마커(`.approved`)가 없으면, 작업 문서 밖의 편집이 실제로 막힌다.
+
+```
+❌ HRN-E016 — ⑤ 설계 승인 전에는 구현할 수 없습니다 (승인 대기: my-task)
+   차단된 조작: Edit src/app.js
+   조치: (a) 사용자 승인을 받은 뒤 `.harness/install/approve my-task` 를 실행하십시오
+         (b) 게이트를 끄려면 harness.config.yaml 의 gate.enforce 를 off 로
+```
+
+```bash
+.harness/install/approve --list          # 작업별 승인 상태
+.harness/install/approve <작업명>        # 승인 (대화형 확인)
+.harness/install/approve --revoke <작업명>   # 철회 — 게이트 재무장
+```
+
+- **차단되는 것**: 작업 문서 밖의 `Edit`·`Write`·`MultiEdit`·`NotebookEdit`,
+  셸의 제자리 편집(`sed -i`·`perl -i`).
+- **차단되지 않는 것**: 읽기·탐색·테스트 실행·`git commit`(승인 전 "설계 — 승인대기"
+  커밋은 정상 흐름) · 작업 문서 자체의 작성.
+- 모드는 `gate.enforce`: `block`(기본) · `warn`(통과시키되 경고) · `off`.
+- 게이트가 판정할 수 없으면 **통과시키고** `HRN-W021`을 냅니다 — 게이트 고장이
+  작업을 세우지 않습니다.
+- 설치·업데이트 때 **기존 작업에는 마커를 백필**합니다. 안 그러면 이미 끝난 작업까지
+  승인 대기로 판정돼 설치 직후 모든 편집이 막힙니다. 진행 중인 작업이 있으면 그
+  작업의 `.approved`를 지우세요.
+
+> **한계를 과장하지 않습니다.** 셸 경유 임의 쓰기(`cat > file`, `python - <<EOF`)까지
+> 막지는 못합니다. **표류를 잡는 장치지 적대적 우회를 막는 장치가 아닙니다.**
+> 에이전트에게 셸이 있는 한 완전 봉쇄는 불가능합니다. 대신 **조용히는 못 하게**
+> 해뒀습니다 — 승인 마커에 시각과 승인 경로가 적혀 git diff에 드러납니다.
+
 ## 브랜치 보호
 
 GitHub 원격 저장소에 main 직접 푸시 금지·PR 필수 규칙을 걸어준다. **세션 시작
@@ -115,15 +158,18 @@ GitHub 원격 저장소에 main 직접 푸시 금지·PR 필수 규칙을 걸어
 ```
 <프로젝트>/
 ├─ harness.config.yaml        # 설정 — 직접 고쳐 쓴다
-├─ .claude/settings.json      # SessionStart 훅 추가 (기존 설정은 그대로 둔다)
+├─ .claude/
+│  ├─ settings.json           # SessionStart + PreToolUse 훅 추가 (기존 설정은 그대로)
+│  └─ skills/<이름>           # 하네스 스킬 심링크 (자동 트리거·/<스킬명> 호출용)
 └─ .harness/
-   ├─ core/playbook.md        # 세션에 주입되는 워크플로 본문
-   ├─ adapters/claude/        # Claude Code 어댑터
-   ├─ skills/                 # 하네스 스킬 9종
+   ├─ core/router.md          # 세션에 상주하는 짧은 판별표 (기본 주입분)
+   ├─ core/playbook.md        # 흐름 본문 — 흐름 시작 시 모델이 직접 읽는다
+   ├─ adapters/claude/hooks/  # session-start.sh · pre-tool-use.sh (승인 게이트)
+   ├─ skills/                 # 하네스 스킬 10종
    ├─ templates/              # 문서 서식 3종
    ├─ config/schema.yaml      # 컨피그 스키마
-   ├─ install/                # setup · update · validate-config
-   └─ work/                   # 작업 문서 (첫 작업 때 생긴다)
+   ├─ install/                # setup · update · validate-config · approve
+   └─ work/                   # 작업 문서 + 승인 마커 (첫 작업 때 생긴다)
 ```
 
 ## 업데이트
@@ -156,6 +202,9 @@ rm -rf ~/dev/내프로젝트/.harness ~/dev/내프로젝트/harness.config.yaml
 | `storage.vault_root` | Obsidian vault 절대경로. `null`이면 저장하지 않는다 |
 | `bootstrap.prompt` | `ask` 면 문서가 없을 때 초기 세팅을 제안한다. `off` 면 안 묻는다 |
 | `agent_mode` | `multi`(기본)면 일부 구간을 서브에이전트로 돌린다. `single`이면 전부 메인 세션에서 한다 |
+| `gate.enforce` | ⑤ 승인 게이트 집행. `block`(기본) · `warn` · `off` |
+| `injection.mode` | 세션 주입량. `router`(기본)면 짧은 판별표만 상주하고 흐름 시작 시 플레이북을 읽는다. `full`은 옛 동작(전문 주입) |
+| `skills.expose_to_claude` | `true`(기본)면 하네스 스킬을 `.claude/skills/`에 심링크로 노출한다 (자동 트리거·`/<스킬명>` 호출) |
 | `preferences.write_to` | 선택 이력을 어디에 쌓을지. `global`(기본)은 `~/.claude/harness/`, `project`는 `<프로젝트>/.harness/` |
 | `preferences.as_recommended` | `true`면 번호 선택형 질문을 추천대로 자동 채택하고 무엇을 왜 골랐는지 표로 남긴다. 기본은 `false` |
 | `skills.project_path` | 이 프로젝트가 가진 스킬 디렉터리(예: `skills`). 지정하면 하네스 스킬과 함께 찾는다. 비워두면(기본) 프로젝트 스킬을 찾지 않는다 |
@@ -209,7 +258,10 @@ stages:
 | `HRN-E007` | 대상 경로 문제 (권한, 또는 하네스 자신을 지정) | 프로젝트 경로를 인자로 넘긴다 |
 | `HRN-E008` | 필요한 CLI가 없다 (rsync 등) | 그 CLI를 설치한다 |
 | `HRN-E010` | 아직 없는 어댑터를 지정했다 | `active_harness: claude` |
+| `HRN-E016` | ⑤ 승인 전 구현 시도 (게이트 차단) | 승인 후 `install/approve <작업명>` |
 | `HRN-W010` | vault 경로가 비어 있다 | 컨피그에 경로를 넣는다 (문서는 로컬에 쌓인다) |
+| `HRN-W021` | 승인 게이트가 판정 불가 → 통과시킴 | 보고된 사유를 고친다 (비차단) |
+| `HRN-W022` | `.claude/skills/`에 같은 이름의 스킬이 있어 노출을 건너뜀 | 한쪽 이름을 바꾸거나 노출을 끈다 |
 | `HRN-W014` | superpowers가 없다 | 플러그인을 깔거나 컨피그에서 뺀다 |
 
 ## 한계
@@ -217,6 +269,10 @@ stages:
 - Obsidian vault 자동 찾기는 WSL에서만 된다. macOS·Linux에서는 경로를 직접 넣는다.
 - `codex`·`ollama` 어댑터는 아직 없다. 지금은 Claude Code 전용이다.
 - 하네스 자신에 설치하는 것은 아직 안 된다.
+- 승인 게이트는 셸 경유 임의 쓰기를 막지 못한다 (위 "승인 게이트" 절의 한계 참고).
+- `effort`는 Claude 어댑터의 서브에이전트 디스패치에서 지원되지 않아 배포 기본값에서
+  주석 처리돼 있다. 지정하면 검증기가 "무시됨"을 알린다.
+- 문서·메시지가 전부 한국어다. i18n 계획은 없다.
 
 ## 라이선스
 
