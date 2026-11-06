@@ -13,6 +13,8 @@ top_level:
   preferences:    { type: map,    required: false }
   skills:         { type: map,    required: false }
   commit:         { type: map,    required: false }
+  gate:           { type: map,    required: false }
+  injection:      { type: map,    required: false }
   agent_mode:     { type: enum, values: [single, multi], default: multi, validated_by: schema }
   # 주의: top_level 스칼라 값은 구조(키 존재)만 검사된다 — validate_config.py 는
   # top_level 에 대해 필수 여부만 확인하고 enum 값 자체는 검사하지 않는다
@@ -83,6 +85,26 @@ preferences:
   # (플레이북 §1-5).
   as_recommended: { type: bool, default: false }
 
+gate:
+  # ⑤ 설계 승인 게이트의 집행 수단. adapters/claude/hooks/pre-tool-use.sh 가 소유한다.
+  # 하위 키 검증은 bootstrap·preferences 와 같은 수준(구조만) — 이 서브스키마도 검증기가
+  # 읽지 않는다. 오타값을 넣어도 통과한다.
+  # 해석 규칙(플레이북 §1-5): off·warn 이 **아닌** 모든 값(부재·오타 포함)은 block.
+  # 안전 방향이 "멈춘다"쪽인 이유: 승인 없이 구현이 나가버리는 쪽이, 한 번 더 멈춰서
+  # approve 를 실행하게 하는 쪽보다 훨씬 놀랍다. preferences.as_recommended 와 같은 방향,
+  # bootstrap.prompt 와는 반대 방향이다.
+  enforce: { type: enum, values: [block, warn, off], default: block }
+
+injection:
+  # SessionStart 훅이 세션에 무엇을 주입하는지. adapters/claude/hooks/session-start.sh 소유.
+  # router(기본) = core/router.md(≤50줄) + 기반 문서 상태 + 컨피그 **경로**.
+  #   흐름이 시작될 때 모델이 core/playbook.md 전문을 직접 읽는다(지연 적재).
+  # full = 옛 동작. 플레이북 전문 + 컨피그 원문을 매 세션 주입한다(실측 16,450자).
+  # 해석 규칙(플레이북 §1-5): full 이 아닌 모든 값(부재·오타 포함)은 router.
+  # 이 키는 "덜 놀라운 쪽"이 기존 동작 유지가 아니다 — 매 세션 1만 토큰대를 선불하는
+  # 쪽이 더 놀랍다고 판단해 기본을 바꿨다. 옛 동작이 필요하면 full 을 명시한다.
+  mode: { type: enum, values: [router, full], default: router }
+
 skills:
   # 프로젝트 소유 스킬의 위치. preference-options 와 같은 수준(구조만) 검증이다.
   # 기준점은 프로젝트 루트 = dirname(harness.config.yaml) — 새 관례를 만들지 않고
@@ -91,6 +113,11 @@ skills:
   # 'skills' 로 두면 skills/ 디렉터리를 가진 기존 설치본이 업데이트만 했는데 해석
   # 경로가 바뀌고, 이름이 겹치면 검증이 막힌다 — 켜는 것은 명시적 선택이어야 한다.
   project_path: { type: string, default: null, nullable: true }
+  # expose_to_claude: 하네스 스킬을 대상의 .claude/skills/<이름> 상대 심링크로 노출한다
+  # (PRD §5 2026-11-06 개정 — 직독 + 노출 병행). 같은 이름의 남의 스킬이 있으면
+  # 조용히 가리지 않고 HRN-W022 로 건너뛴다. 해석 규칙: false 가 아닌 값은 전부 true —
+  # 노출은 추가 경로일 뿐 직독을 대체하지 않아, 켜져 있는 쪽의 부작용이 작다.
+  expose_to_claude: { type: bool, default: true }
 
 commit:
   # 커밋 규약은 **프로젝트가 소유한다.** 검증기는 구조만 본다 — format 에 {type}·{message}

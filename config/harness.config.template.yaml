@@ -14,7 +14,10 @@ agent_mode: multi                # single | multi(기본) — 전역 마스터 �
 
 defaults:                        # 구간 미지정 시 상속
   model: sonnet
-  effort: medium                 # Claude 어댑터의 Agent 디스패치는 현재 effort 미지원 — 플레이북 §1 참조
+  # effort: medium               # 주석 처리 상태로 배포한다 — Claude 어댑터의 Agent 디스패치가
+                                 # effort 를 지원하지 않아, 값을 싣는 순간 검증기가 매번
+                                 # "무시됩니다" 경고를 낸다(갓 설치한 프로젝트의 첫 검증부터).
+                                 # Workflow 오케스트레이션을 쓰게 되면 주석을 푼다 — 플레이북 §1
 
 workdocs:
   path: .harness/work            # 작업 문서(설계·구현계획·구현후보고) 보관 위치, 프로젝트 루트 기준
@@ -49,11 +52,28 @@ preferences:                     # 선호 기반 옵션 추천 (preference-optio
                                   # 주의: 이 값도 검증기가 검사하지 않는다 — true 가 아닌
                                   # 값은(부재·오타 포함) 전부 false 로 취급된다(write_to 와 반대)
 
+gate:                            # ⑤ 설계 승인 게이트의 집행 (PreToolUse 훅)
+  enforce: block                 # block(기본) = 승인 마커 없으면 작업 문서 밖 편집·커밋 차단(HRN-E016)
+                                 # warn = 통과시키되 경고만 | off = 집행 안 함
+                                 # 주의: 이 값은 검증기가 검사하지 않는다 — off·warn 이 아닌
+                                 # 값은(오타 포함) 전부 block 으로 취급된다(플레이북 §1-5)
+
+injection:                       # SessionStart 훅이 세션에 주입하는 것
+  mode: router                   # router(기본) = core/router.md + 문서 상태 + 컨피그 경로.
+                                 #   흐름 시작 시 모델이 playbook.md 전문을 직접 읽는다
+                                 # full = 플레이북 전문 + 컨피그 원문 주입(옛 동작, 실측 16,450자)
+                                 # 주의: 검증기가 검사하지 않는다 — full 이 아닌 값은 전부 router
+
 skills:                          # 프로젝트 소유 스킬의 위치 (project-conventions)
   project_path: null             # null(기본) = 프로젝트 스킬을 찾지 않는다
                                  # 예: skills · .claude/skills — 프로젝트 루트 기준 상대경로
                                  # 지정하면 하네스 스킬과 함께 찾고, 이름이 겹치면
                                  # HRN-E015 로 막는다 — project:<이름> 으로 명시해 푼다
+
+  expose_to_claude: true         # true(기본) = 하네스 스킬을 <대상>/.claude/skills/<이름>
+                                 # 상대 심링크로 노출한다 — 자동 트리거·/<스킬명> 호출이 가능해진다.
+                                 # 구간별 실행은 그대로 파일 직독이다(노출은 대체가 아니라 병행).
+                                 # 같은 이름의 남의 스킬이 있으면 HRN-W022 로 건너뛴다(가리지 않는다)
 
 commit:                          # 커밋 규약 — 프로젝트가 소유한다
   format: "[{type}]: {message}"  # 기본 = 하네스 현행. 예) "{type}: {message}" 면 feat: 로그인 추가
@@ -72,7 +92,7 @@ stages:
     skills: []
   design:                        # ⑤ 설계
     model: opus
-    effort: high
+    # effort: high                 # 위 defaults.effort 와 같은 이유로 주석 처리(미지원)
     skills: [design-doc]
     gate: required               # 명시적 승인 필수
   plan:                          # ⑥ 구현 계획
