@@ -243,5 +243,17 @@ fi
 say "스킬 노출  : ${EXPOSE_STATUS}"
 say "승인 게이트: 기존 작업 백필 — ${BACKFILL_STATUS}"
 say "컨피그 검증: ${CONFIG_VALID}"
+# vault 상태를 **알리기만** 한다 — update 는 컨피그를 건드리지 않는 계약이다(묻지 않는다).
+# update 만 돌리는 사용자도 자기 vault 경로가 죽은 것을 알아야 한다.
+VR_STATE="empty"; VR_PATH=""
+if [ -f "$TARGET_CONFIG" ]; then
+  IFS="$(printf '\t')" read -r VR_STATE VR_PATH < <(vault_root_state "$TARGET_CONFIG") || true
+fi
+case "$VR_STATE" in
+  ok)      say "vault 경로 : 확인 (${VR_PATH})" ;;
+  missing) warn "vault 경로 : ⚠️ HRN-W023 경로 없음 (${VR_PATH}) — ⑪ 저장이 건너뛰어집니다"
+           say "  조치: (a) 대화형으로 install/setup 재실행 (b) 다른 PC 의 볼트라면 그대로 두십시오" ;;
+  *)       say "vault 경로 : 미지정 (HRN-W010 — 문서는 로컬에 쌓입니다)" ;;
+esac
 echo
 ok "업데이트 완료 — 재세팅 없이 기존 워크플로를 바로 사용할 수 있습니다."
