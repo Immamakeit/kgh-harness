@@ -629,3 +629,24 @@ PYEOF
     printf '%s\t%s\n' "$(basename "$unixpath")" "$unixpath"
   done <<< "$raw"
 }
+
+# storage.vault_root 의 3상태 판정. 표준출력: "<상태>\t<경로>" (상태 = ok|empty|missing)
+#
+# python 검증기(validate_config.py)와 **상태 이름을 맞춘다** — 같은 것을 두 이름으로
+# 부르면 사용자가 보는 메시지가 갈린다.
+#
+# null·~ 를 empty 로 접는 이유: YAML 에서 셋 다 "미지정"이고, 배포 템플릿이 실제로
+# `vault_root: null` 을 담고 있다. 접지 않으면 하필 "null" 이라는 이름의 디렉터리가
+# 있을 때 ok 를 받는 황당한 경로가 열린다.
+vault_root_state() {
+  local cfg="$1" vr
+  vr="$(yaml_get "$cfg" "storage.vault_root" 2>/dev/null || true)"
+  case "$vr" in
+    ""|"null"|"~") printf 'empty\t\n'; return 0 ;;
+  esac
+  if [ -d "$vr" ]; then
+    printf 'ok\t%s\n' "$vr"
+  else
+    printf 'missing\t%s\n' "$vr"
+  fi
+}
