@@ -170,9 +170,10 @@ if [ "$ACTIVE_HARNESS_L1" = "claude" ]; then
         ;;
       unknown)
         SUPERPOWERS_STATUS="확인 불가, 건너뜀"
-        note "superpowers 설치 여부를 확인할 수 없어 건너뜁니다 (python3/grep 모두 미발견 — fail-open)"
+        note "superpowers 설치 여부를 확인할 수 없어 건너뜁니다 (매니페스트 미발견 또는 파싱 불가 — fail-open)"
+        note "  확인 경로: ${SP_MANIFEST}"
         ;;
-      notfound|nomanifest)
+      notfound)
         SUPERPOWERS_STATUS="미발견(W014)"
         SP_STAGES_FMT="$(printf '%s\n' "$SP_STAGE_SKILLS" | cut -d: -f1 | sort -u | join_lines '·')"
         SP_SKILLS_FMT="$(printf '%s\n' "$SP_STAGE_SKILLS" | cut -d: -f2- | sort -u | join_lines ', ')"

@@ -521,16 +521,21 @@ superpowers_skills_in_config() {
 }
 
 # detect_superpowers  → 2줄을 stdout으로 출력:
-#   1줄: "found:<버전>" | "notfound" | "nomanifest" | "unknown"
+#   1줄: "found:<버전>" | "notfound" | "unknown"
 #   2줄: 확인한 매니페스트 경로(호출자가 W014 안내 문구에 사용)
 # ${CLAUDE_CONFIG_DIR:-$HOME/.claude}/plugins/installed_plugins.json 을 조회한다.
 # python3 있으면 JSON 파싱, 없으면 `grep -q '"superpowers@'` 폴백. 둘 다 불가면
 # fail-open으로 "unknown"을 반환한다(오탐보다 미확인 쪽이 낫다 — 설계 §3-2 6항).
-# 파일이 없으면(플러그인을 한 번도 설치한 적 없는 것으로 간주) "nomanifest".
+# 매니페스트 파일 자체가 없으면 "unknown"(확인 불가)이다 — **"미발견"이 아니다.**
+# 플러그인을 다른 경로·다른 방식으로 깔았을 수 있고, 없다고 단정할 근거가 아니다.
+# 2026-11-06 수정: 이전에는 이 경우를 "nomanifest" 로 내고 setup 이 W014("미발견")로
+# 보고했는데, 같은 상황을 validate_config.py 는 "확인 불가"로 봤다. 한 번의 setup 실행이
+# 두 문구를 동시에 출력하는 것이 실측돼(평가 보고) **python 쪽(fail-open)에 맞췄다.**
+# 주석은 "동일 원천"이라 적혀 있었지만 실제로는 갈라져 있었다.
 detect_superpowers() {
   local manifest="${CLAUDE_CONFIG_DIR:-$HOME/.claude}/plugins/installed_plugins.json"
   if [ ! -f "$manifest" ]; then
-    printf 'nomanifest\n%s\n' "$manifest"
+    printf 'unknown\n%s\n' "$manifest"
     return 0
   fi
   if command -v python3 >/dev/null 2>&1; then
