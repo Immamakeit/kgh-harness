@@ -80,9 +80,17 @@ description: Use when saving harness output documents (설계/구현계획/구�
 
    상태 판정이 필요하면 `install/lib.sh` 의 `vault_root_state <컨피그>` 를 쓴다
    (`ok|empty|missing` 를 탭과 함께 출력한다 — 판정 기준을 두 곳에서 만들지 않는다).
-2. **CLI 가용성 확인** — `"$OBS" version` 실행. **⚠️ 실측 함정: 연결 실패여도 exit code가
-   0이다.** 판정은 반드시 출력 텍스트로 한다 — 버전 문자열(예: `1.12.7 (installer 1.12.7)`)이면
-   가용, `"unable to find Obsidian"`이면 미가용(가장 흔한 원인: **앱이 꺼져 있음**).
+2. **CLI 가용성 확인** — `"$OBS" version` 실행. **⚠️ 실측 함정: 어떤 실패에서도 exit code가
+   0이다.** 판정은 반드시 **출력 텍스트**로 한다. 응답은 세 가지이고 **조치가 서로 다르다**:
+
+   | 출력 | 판정 | 조치 |
+   |---|---|---|
+   | 버전 문자열 (예: `1.12.7 (installer 1.12.7)`) | 가용 | 3번으로 |
+   | `unable to find Obsidian` | 미가용 — **앱이 꺼져 있음** | 앱 실행 후 재시도 |
+   | `Command line interface is not enabled. Please turn it on in Settings > General > Advanced.` | 미가용 — **앱은 떠 있고 CLI 기능이 꺼져 있음** | Obsidian 설정 > General > Advanced 에서 CLI 활성화 (앱 재실행은 소용없다) |
+
+   세 번째는 2026-11-06 실측으로 추가됐다 — 리다이렉터를 찾았고 앱도 떠 있는데 미가용인
+   경우가 있다. 이 응답을 "앱이 꺼졌다"로 오진하면 사용자는 **아무 효과 없는 조치**를 한다.
 3. **가용하면 CLI로 저장** — 링크 자동 갱신 등 이점:
    ```bash
    "$OBS" vault=<vault명> create path="wiki/<카테고리>/<프로젝트>/_work/<작업명>/<YYYY-MM-DD>/설계.md" content="---\ntype: 설계\n..."
@@ -91,7 +99,9 @@ description: Use when saving harness output documents (설계/구현계획/구�
    확장됨(frontmatter 포함 문서 전체를 한 줄로 전달 가능) · 대상 vault는 Obsidian에 등록된
    vault여야 함(`"$OBS" vaults`로 목록 확인, vault_root가 등록 vault가 아니면 4번 폴백).
 4. **미가용하면 파일 직접 쓰기로 폴백하되, 반드시 경고를 보고에 남긴다**:
-   `⚠️ HRN-W011 — Obsidian CLI 미가용(앱 꺼짐/미등록/미설치). 파일 직접 쓰기로 저장함. 링크 자동 갱신 등 CLI 이점 없음. 앱 실행 후 재시도 가능.`
+   `⚠️ HRN-W011 — Obsidian CLI 미가용(<2번에서 판정한 실제 사유>). 파일 직접 쓰기로 저장함. 링크 자동 갱신 등 CLI 이점 없음. 조치: <그 사유에 맞는 조치> 후 재시도 가능.`
+   **사유를 뭉뚱그리지 않는다** — 2번 표의 세 응답은 조치가 다르다. "앱 꺼짐/미등록/미설치"로
+   한데 묶어 보고하면 CLI 비활성인 경우에 틀린 조치를 안내한다.
    경고 없는 폴백 = 위반. CLI 위치 탐색(위 섹션)을 하지 않고 폴백하는 것도 위반.
 5. **결과 보고** — 저장된 전체 경로 목록 + 사용 방식(CLI/폴백) + 발생 경고를 숨김없이.
 6. **사용 보고 (하네스 공통 규칙)** — 그 턴의 보고 마지막에 반드시 명시한다:
