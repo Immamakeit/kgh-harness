@@ -728,7 +728,14 @@ test_validate_config() {
   fi
 
   # (7) effort 미적용 사실을 보고에 노출
-  assert_contains "$(cat "${dir}/ok.log")" "effort" "요약이 effort 미지원 사실을 알린다"
+  #     2026-11-06: 기본 컨피그·배포 템플릿에서 effort 를 **주석 처리**했다(갓 설치한
+  #     프로젝트의 첫 검증부터 "무시됩니다" 경고가 나오던 노이즈 제거). 없앤 것은
+  #     기본값이고 "지정하면 알린다"는 계약은 그대로다 — 그래서 명시적으로 넣어 본다.
+  sed 's/^defaults:/defaults:\n  effort: high/' "${REPO_ROOT}/harness.config.yaml" > "${dir}/eff.yaml"
+  "$vc" "${dir}/eff.yaml" >"${dir}/eff.log" 2>&1 || true
+  assert_contains "$(cat "${dir}/eff.log")" "effort" "effort 를 지정하면 미지원 사실을 알린다"
+  assert_not_contains "$(cat "${dir}/ok.log")" "effort 는" \
+    "기본 컨피그는 effort 경고를 내지 않는다 (배포 기본값의 노이즈 0)"
 
   # (8) superpowers 설치 상태에서는 W014를 내지 않는다 (오발화 회귀 방지)
   if [ -f "${CLAUDE_CONFIG_DIR:-$HOME/.claude}/plugins/installed_plugins.json" ] &&
@@ -1980,7 +1987,309 @@ test_playbook_cross_refs
 test_ask_choice
 test_detect_obsidian_vaults
 test_public_distribution
+# ---- enforcement-gate (2026-11-06) -----------------------------------------
+# 계약: ⑤ 승인 게이트가 **실제로 막는가**, approve 가 승인 경로를 남기는가,
+# 주입 모드가 라우터로 줄어드는가, 스킬 노출이 남의 것을 가리지 않는가.
+
+GATE_HOOK="${REPO_ROOT}/adapters/claude/hooks/pre-tool-use.sh"
+
+# gate_fixture <dir> [enforce값]  — 컨피그 + 작업 디렉터리만 갖춘 최소 대상
+gate_fixture() {
+  local dir="$1" enforce="${2:-block}"
+  mkdir -p "${dir}/.harness/work/demo/2026-11-06"
+  cat > "${dir}/harness.config.yaml" <<EOF
+active_harness: claude
+workdocs:
+  path: .harness/work
+  names:
+    design: 설계.md
+    plan:   구현계획.md
+    report: 구현후보고.md
+gate:
+  enforce: ${enforce}
+EOF
+}
+
+# gate_call <대상> <JSON>  → "rc<TAB>stderr" 를 stdout
+gate_call() {
+  local target="$1" json="$2" rc=0 out
+  out="$(printf '%s' "$json" | CLAUDE_PROJECT_DIR="$target" bash "$GATE_HOOK" 2>&1 1>/dev/null)" || rc=$?
+  printf '%s\t%s' "$rc" "$out"
+}
+
+test_gate_hook() {
+  group "게이트 — PreToolUse 승인 마커 계약"
+
+  local t r
+  t="$(mktemp -d "${WORK}/gate1.XXXXXX")"
+  gate_fixture "$t"
+
+  # (1) 설계 문서가 없으면 흐름이 시작된 적 없다 → 무장하지 않는다
+  r="$(gate_call "$t" '{"tool_name":"Edit","tool_input":{"file_path":"src/a.js"}}')"
+  assert_eq "${r%%$'\t'*}" "0" "설계 문서 없으면 통과 (미무장)"
+
+  # (2) 설계 문서 + 마커 없음 → 무장. 작업 문서 **밖**의 쓰기는 차단된다.
+  printf '# 설계\n' > "${t}/.harness/work/demo/2026-11-06/설계.md"
+  r="$(gate_call "$t" '{"tool_name":"Edit","tool_input":{"file_path":"src/a.js"}}')"
+  assert_eq "${r%%$'\t'*}" "2" "승인 전 소스 Edit 차단 (rc=2)"
+  assert_contains "$r" "HRN-E016" "차단 사유를 HRN-E016 으로 안내"
+  assert_contains "$r" "approve" "복구 경로에 approve 안내"
+  assert_contains "$r" "demo" "어느 작업이 승인 대기인지 명시"
+
+  r="$(gate_call "$t" '{"tool_name":"Write","tool_input":{"file_path":"/tmp/x/other.py"}}')"
+  assert_eq "${r%%$'\t'*}" "2" "절대경로 Write 도 차단"
+  r="$(gate_call "$t" '{"tool_name":"MultiEdit","tool_input":{"edits":[{"file_path":"src/b.js"}]}}')"
+  assert_eq "${r%%$'\t'*}" "2" "MultiEdit 의 edits[].file_path 도 본다"
+
+  # (3) 작업 문서 자체는 항상 쓸 수 있다 — ⑤⑥이 문서를 만드는 구간이다
+  r="$(gate_call "$t" '{"tool_name":"Write","tool_input":{"file_path":".harness/work/demo/2026-11-06/구현계획.md"}}')"
+  assert_eq "${r%%$'\t'*}" "0" "작업 문서 쓰기는 통과 (⑤⑥이 문서를 만든다)"
+
+  # (4) 읽기·탐색·커밋은 막지 않는다
+  r="$(gate_call "$t" '{"tool_name":"Read","tool_input":{"file_path":"src/a.js"}}')"
+  assert_eq "${r%%$'\t'*}" "0" "Read 통과"
+  r="$(gate_call "$t" '{"tool_name":"Bash","tool_input":{"command":"ls -la"}}')"
+  assert_eq "${r%%$'\t'*}" "0" "Bash ls 통과"
+  r="$(gate_call "$t" '{"tool_name":"Bash","tool_input":{"command":"git commit -m 설계"}}')"
+  assert_eq "${r%%$'\t'*}" "0" "git commit 통과 (승인 전 설계 문서 커밋은 정상 흐름)"
+
+  # (5) 셸 경유 제자리 편집은 막는다
+  r="$(gate_call "$t" '{"tool_name":"Bash","tool_input":{"command":"sed -i s/a/b/ src/a.js"}}')"
+  assert_eq "${r%%$'\t'*}" "2" "sed -i 차단"
+
+  # (6) 마커가 생기면 풀린다
+  touch "${t}/.harness/work/demo/2026-11-06/.approved"
+  r="$(gate_call "$t" '{"tool_name":"Edit","tool_input":{"file_path":"src/a.js"}}')"
+  assert_eq "${r%%$'\t'*}" "0" "승인 마커가 있으면 통과"
+  rm -f "${t}/.harness/work/demo/2026-11-06/.approved"
+
+  # (7) fail-open — 판정 불가는 **통과**시키고 W021 을 낸다
+  r="$(gate_call "$t" 'not a json')"
+  assert_eq "${r%%$'\t'*}" "0" "깨진 입력은 fail-open (게이트 고장이 작업을 세우지 않는다)"
+  assert_contains "$r" "HRN-W021" "fail-open 사실을 HRN-W021 로 알린다"
+
+  # (8) 모드 — warn / off / 오타
+  local tw to tx
+  tw="$(mktemp -d "${WORK}/gatew.XXXXXX")"; gate_fixture "$tw" warn
+  printf '# 설계\n' > "${tw}/.harness/work/demo/2026-11-06/설계.md"
+  r="$(gate_call "$tw" '{"tool_name":"Edit","tool_input":{"file_path":"src/a.js"}}')"
+  assert_eq "${r%%$'\t'*}" "0" "warn 모드는 통과시킨다"
+  assert_contains "$r" "warn" "warn 모드도 사실은 보고한다 (silent 금지)"
+
+  to="$(mktemp -d "${WORK}/gateo.XXXXXX")"; gate_fixture "$to" off
+  printf '# 설계\n' > "${to}/.harness/work/demo/2026-11-06/설계.md"
+  r="$(gate_call "$to" '{"tool_name":"Edit","tool_input":{"file_path":"src/a.js"}}')"
+  assert_eq "${r%%$'\t'*}" "0" "off 모드는 집행하지 않는다"
+  assert_not_contains "$r" "HRN-E016" "off 모드는 경고도 내지 않는다"
+
+  tx="$(mktemp -d "${WORK}/gatex.XXXXXX")"; gate_fixture "$tx" blokc
+  printf '# 설계\n' > "${tx}/.harness/work/demo/2026-11-06/설계.md"
+  r="$(gate_call "$tx" '{"tool_name":"Edit","tool_input":{"file_path":"src/a.js"}}')"
+  assert_eq "${r%%$'\t'*}" "2" "오타 모드는 block 으로 떨어진다 (§1-5 안전측)"
+
+  # (9) 컨피그가 아예 없는 프로젝트 — 무장 근거가 없으니 통과
+  local tn
+  tn="$(mktemp -d "${WORK}/gaten.XXXXXX")"
+  r="$(gate_call "$tn" '{"tool_name":"Edit","tool_input":{"file_path":"src/a.js"}}')"
+  assert_eq "${r%%$'\t'*}" "0" "컨피그 없는 프로젝트는 통과 (게이트가 남의 집을 막지 않는다)"
+
+  # (10) 드리프트 고정 — lib.sh yaml_get 과 훅의 awk 가 같은 값을 읽어야 한다
+  #      (훅은 설치 스크립트에 의존하지 않으려 같은 파서를 복제해 들고 있다)
+  local via_lib via_hook
+  via_lib="$(yaml_get "${t}/harness.config.yaml" "workdocs.names.design")"
+  via_hook="$(awk -v path="workdocs.names.design" '
+    { raw = $0; sub(/#.*$/, "", raw)
+      if (raw ~ /^[[:space:]]*$/) next
+      n = match(raw, /[^ ]/); if (n == 0) next
+      ind = n - 1; rest = substr(raw, n)
+      if (substr(rest, 1, 1) == "-") next
+      ci = index(rest, ":"); if (ci == 0) next
+      key = substr(rest, 1, ci - 1); val = substr(rest, ci + 1)
+      gsub(/^[ \t]+|[ \t]+$/, "", val)
+      lvl = int(ind / 2); stack[lvl] = key
+      for (i = lvl + 1; i < 10; i++) stack[i] = ""
+      cur = stack[0]
+      for (i = 1; i <= lvl; i++) cur = cur "." stack[i]
+      if (cur == path && val != "") { print val; exit }
+    }' "${t}/harness.config.yaml")"
+  assert_eq "$via_hook" "$via_lib" "복제된 YAML 파서가 lib.sh 와 같은 값을 읽는다 (드리프트 고정)"
+}
+
+test_approve_cli() {
+  group "게이트 — install/approve 계약"
+
+  local t out rc
+  t="$(mktemp -d "${WORK}/appr.XXXXXX")"
+  gate_fixture "$t"
+  printf -- '---\ntype: 설계\n---\n> [!summary] 요약(≤10자)\n> 테스트승인\n' \
+    > "${t}/.harness/work/demo/2026-11-06/설계.md"
+  # 설치본 배치를 모사한다: <대상>/.harness/install/{approve,lib.sh}
+  mkdir -p "${t}/.harness/install"
+  cp "${INSTALL_DIR}/approve" "${INSTALL_DIR}/lib.sh" "${t}/.harness/install/"
+  chmod +x "${t}/.harness/install/approve"
+
+  # (1) --list — 승인 대기를 숨기지 않는다
+  out="$("${t}/.harness/install/approve" --list 2>&1 || true)"
+  assert_contains "$out" "demo" "--list 가 작업을 보여준다"
+  assert_contains "$out" "대기" "승인 대기 상태를 명시"
+
+  # (2) 비대화형 승인은 --by-user 없이는 거부된다 (게이트의 존재 이유)
+  rc=0; out="$("${t}/.harness/install/approve" demo </dev/null 2>&1)" || rc=$?
+  assert_eq "$rc" "1" "비대화형에서 --by-user 없이는 승인되지 않는다"
+  assert_contains "$out" "HRN-E016" "거부 사유를 코드로 안내"
+  assert_absent "${t}/.harness/work/demo/2026-11-06/.approved" "거부되면 마커를 만들지 않는다"
+
+  # (3) --by-user → 마커 생성 + **승인 경로가 기록된다**
+  rc=0; out="$("${t}/.harness/install/approve" demo --by-user </dev/null 2>&1)" || rc=$?
+  assert_eq "$rc" "0" "--by-user 로 승인된다"
+  assert_present "${t}/.harness/work/demo/2026-11-06/.approved" "마커 생성됨"
+  local marker
+  marker="$(cat "${t}/.harness/work/demo/2026-11-06/.approved")"
+  assert_contains "$marker" "승인경로=flag" "승인 경로가 마커에 기록된다 (조용히 승인할 수 없다)"
+  assert_contains "$marker" "승인시각=" "승인 시각이 기록된다"
+  assert_not_contains "$marker" "${t}" "설계문서 경로는 절대경로가 아니다 (머신 경로를 이력에 박지 않는다)"
+  assert_contains "$marker" ".harness/work/demo" "설계문서 경로가 프로젝트 기준 상대경로"
+
+  # (4) 멱등 — 이미 승인된 작업은 다시 만들지 않고 상태를 보여준다
+  rc=0; out="$("${t}/.harness/install/approve" demo --by-user </dev/null 2>&1)" || rc=$?
+  assert_eq "$rc" "0" "이미 승인된 작업에 다시 실행해도 성공 종료"
+  assert_contains "$out" "이미 승인" "이미 승인됨을 알린다"
+
+  # (5) 승인 후 게이트가 풀렸는가 — 실물 확인
+  local r
+  r="$(gate_call "$t" '{"tool_name":"Edit","tool_input":{"file_path":"src/a.js"}}')"
+  assert_eq "${r%%$'\t'*}" "0" "approve 후 게이트가 실제로 풀린다"
+
+  # (6) 없는 작업 → E005
+  rc=0; out="$("${t}/.harness/install/approve" nosuch --by-user </dev/null 2>&1)" || rc=$?
+  assert_eq "$rc" "1" "없는 작업은 승인되지 않는다"
+  assert_contains "$out" "HRN-E005" "없는 작업은 E005 로 안내"
+
+  # (7) 백필 — 기존 마커는 덮지 않는다 (진행 중 작업의 상태를 지우면 안 된다)
+  mkdir -p "${t}/.harness/work/old/2026-01-01"
+  printf '# 설계\n' > "${t}/.harness/work/old/2026-01-01/설계.md"
+  local n
+  n="$(backfill_approvals "$t")"
+  assert_eq "$n" "1" "마커 없는 기존 작업만 백필한다"
+  assert_contains "$(cat "${t}/.harness/work/demo/2026-11-06/.approved")" "flag" \
+    "백필이 기존 승인 경로를 덮어쓰지 않는다"
+  assert_contains "$(cat "${t}/.harness/work/old/2026-01-01/.approved")" "backfill" \
+    "백필한 마커는 backfill 로 표시된다 (사용자 승인과 구분)"
+}
+
+test_injection_modes() {
+  group "주입 — injection.mode (라우터 / 전문)"
+
+  local hook t out_router out_full
+  hook="${REPO_ROOT}/adapters/claude/hooks/session-start.sh"
+  t="$(mktemp -d "${WORK}/inj.XXXXXX")"
+  cat > "${t}/harness.config.yaml" <<'EOF'
+active_harness: claude
+injection:
+  mode: router
+EOF
+  out_router="$(CLAUDE_PROJECT_DIR="$t" bash "$hook" 2>/dev/null)"
+  assert_contains "$out_router" "하네스 라우터" "router 모드는 라우터를 주입한다"
+  assert_contains "$out_router" "core/playbook.md" "플레이북의 **경로**를 알려준다"
+  assert_not_contains "$out_router" "구간 실행표 (workflow 9단계)" \
+    "router 모드는 플레이북 전문을 주입하지 않는다"
+  assert_not_contains "$out_router" "active_harness: claude" \
+    "router 모드는 컨피그 원문을 주입하지 않는다 (흐름 시작 시 다시 읽는다)"
+  assert_contains "$out_router" "프로젝트 기반 문서 상태" "기반 문서 상태는 두 모드 공통"
+  assert_contains "$out_router" "HRN-E016" "게이트가 실제로 막는다는 사실을 라우터가 알린다"
+
+  sed -i 's/^  mode: router/  mode: full/' "${t}/harness.config.yaml"
+  out_full="$(CLAUDE_PROJECT_DIR="$t" bash "$hook" 2>/dev/null)"
+  assert_contains "$out_full" "구간 실행표 (workflow 9단계)" "full 모드는 플레이북 전문을 주입한다"
+  assert_contains "$out_full" "active_harness: claude" "full 모드는 컨피그 원문도 주입한다"
+
+  # 다이어트가 실제로 줄였는가 — 숫자로 고정한다(회귀가 조용히 되돌려지는 것 방지)
+  local n_router n_full
+  n_router="$(printf '%s' "$out_router" | wc -m)"
+  n_full="$(printf '%s' "$out_full" | wc -m)"
+  if [ "$n_router" -lt "$((n_full / 3))" ]; then
+    pass_case "router 주입량이 full 의 1/3 미만 (실측 ${n_router} vs ${n_full}자)"
+  else
+    fail_case "router 주입량이 full 의 1/3 미만" "router=${n_router} full=${n_full}"
+  fi
+
+  # 오타 → router (§1-5)
+  sed -i 's/^  mode: full/  mode: roooter/' "${t}/harness.config.yaml"
+  out_router="$(CLAUDE_PROJECT_DIR="$t" bash "$hook" 2>/dev/null)"
+  assert_contains "$out_router" "하네스 라우터" "오타 모드는 router 로 떨어진다"
+
+  # 컨피그가 없으면 router + W012 안내
+  local t2 out2
+  t2="$(mktemp -d "${WORK}/inj2.XXXXXX")"
+  out2="$(CLAUDE_PROJECT_DIR="$t2" bash "$hook" 2>/dev/null)"
+  assert_contains "$out2" "HRN-W012" "컨피그 없으면 W012 로 안내 (비차단)"
+  assert_contains "$out2" "하네스 라우터" "컨피그 없어도 라우터는 주입된다"
+}
+
+test_skill_exposure() {
+  group "스킬 노출 — .claude/skills/ (PRD §5 개정)"
+
+  local t out
+  t="$(mktemp -d "${WORK}/expo.XXXXXX")"
+  git -C "$t" init -q
+  # 같은 이름의 **프로젝트 자신의 스킬**을 미리 심어 충돌을 만든다
+  mkdir -p "${t}/.claude/skills/design-doc"
+  printf -- '---\nname: design-doc\n---\n프로젝트 것\n' > "${t}/.claude/skills/design-doc/SKILL.md"
+
+  ( cd "$REPO_ROOT" && ./install/setup "$t" </dev/null >"${WORK}/expo.log" 2>&1 )
+  out="$(cat "${WORK}/expo.log")"
+
+  assert_present "${t}/.claude/skills/report-doc/SKILL.md" "하네스 스킬이 노출된다 (심링크 해석됨)"
+  assert_eq "$(readlink "${t}/.claude/skills/report-doc")" "../../.harness/skills/report-doc" \
+    "노출은 상대 심링크 (프로젝트를 옮겨도 산다)"
+  assert_contains "$out" "HRN-W022" "이름이 겹치면 W022 로 알린다"
+  assert_eq "$(cat "${t}/.claude/skills/design-doc/SKILL.md" | tail -1)" "프로젝트 것" \
+    "충돌 시 **남의 스킬을 가리지 않는다** (조용히 덮지 않음)"
+  assert_contains "$out" "스킬 노출" "설치 요약에 노출 결과 명시 (결과 비은닉)"
+
+  # .gitignore — 우리가 만든 링크만 무시한다. 남의 스킬을 가리면 안 된다.
+  assert_contains "$(cat "${t}/.gitignore")" "/.claude/skills/report-doc" \
+    ".gitignore 에 우리 링크를 넣는다"
+  assert_not_contains "$(cat "${t}/.gitignore")" "/.claude/skills/design-doc" \
+    "충돌로 건너뛴 이름은 .gitignore 에 넣지 않는다 (남의 스킬을 가리지 않는다)"
+
+  # 재설치 멱등
+  ( cd "$REPO_ROOT" && ./install/setup "$t" </dev/null >"${WORK}/expo2.log" 2>&1 )
+  assert_contains "$(cat "${WORK}/expo2.log")" "유지" "재설치는 기존 링크를 유지한다 (멱등)"
+
+  # 죽은 링크 청소
+  ln -s "../../.harness/skills/gone-skill" "${t}/.claude/skills/gone-skill"
+  ( cd "$REPO_ROOT" && ./install/setup "$t" </dev/null >/dev/null 2>&1 )
+  assert_absent "${t}/.claude/skills/gone-skill" "하네스에서 사라진 스킬의 죽은 링크를 청소한다"
+
+  # 끄면 만들지 않는다
+  local t2
+  t2="$(mktemp -d "${WORK}/expo3.XXXXXX")"
+  ( cd "$REPO_ROOT" && ./install/setup "$t2" </dev/null >/dev/null 2>&1 )
+  # 덧붙이면 skills: 가 중복돼 앞의 true 가 읽힌다(최소 파서는 첫 일치를 쓴다) —
+  # 기존 키의 값을 바꿔야 한다. 2026-11-06 이 테스트 자신의 결함으로 실측됨.
+  sed -i 's/^  expose_to_claude: true/  expose_to_claude: false/' "${t2}/harness.config.yaml"
+  rm -rf "${t2}/.claude/skills"
+  ( source "${INSTALL_DIR}/lib.sh" >/dev/null 2>&1
+    out="$(expose_skills "$t2" "${t2}/.harness" 2>/dev/null)"
+    printf '%s' "$out" > "${WORK}/expo_off.txt" )
+  assert_contains "$(cat "${WORK}/expo_off.txt")" "꺼짐" "expose_to_claude: false 면 노출하지 않는다"
+
+  # 게이트 훅이 설치본에 실제로 들어왔는가 + settings.json 에 연결됐는가
+  assert_present "${t}/.harness/adapters/claude/hooks/pre-tool-use.sh" "게이트 훅이 배포된다"
+  assert_present "${t}/.harness/adapters/claude/hooks/gate_decide.py" "게이트 판정부가 배포된다"
+  assert_present "${t}/.harness/install/approve" "approve 가 배포된다"
+  assert_present "${t}/.harness/core/router.md" "라우터가 배포된다"
+  assert_contains "$(cat "${t}/.claude/settings.json")" "PreToolUse" "PreToolUse 훅이 연결된다"
+  assert_contains "$(cat "${t}/.claude/settings.json")" "pre-tool-use.sh" "게이트 훅 경로가 연결된다"
+  assert_absent "${t}/.harness/.github" "CI 정의는 배포되지 않는다 (개발용)"
+}
+
 test_hook_doc_state
+test_gate_hook
+test_approve_cli
+test_injection_modes
+test_skill_exposure
 
 printf '\n=== 요약 ===\n'
 printf 'PASS: %d  FAIL: %d\n' "$PASS" "$FAIL"
