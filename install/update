@@ -136,6 +136,22 @@ UPDATED_AT="$(date -Iseconds 2>/dev/null || date)"
 ok ".meta 갱신: ${OLD_COMMIT:0:12} → ${NEW_COMMIT:0:12}"
 echo
 
+# ---- 3b. 승인 마커 백필 (게이트 부트스트랩 함정 방어) ----------------------
+# 설계 §2-2: 승인 마커 부재를 "승인 전"으로 읽는 게이트를 기존 프로젝트에 얹으면 이미
+# 끝난 작업 전부가 승인 대기로 판정되어 설치 직후 모든 편집이 차단된다. 한 번 백필하고
+# 되돌리는 법을 함께 알린다 — **진행 중인 작업이 있으면 그 마커를 지워야 한다.**
+
+BACKFILLED="$(backfill_approvals "$TARGET_DIR")"
+if [ "$BACKFILLED" -gt 0 ]; then
+  ok "기존 작업 ${BACKFILLED}건을 '승인 완료'로 표시했습니다 (게이트가 이미 끝난 작업을 막지 않도록)"
+  note "  진행 중인(아직 승인 안 받은) 작업이 있으면 그 작업의 .approved 를 지우세요 —"
+  note "  목록: ${SCRIPT_DIR}/approve --list"
+  BACKFILL_STATUS="${BACKFILLED}건 승인 표시"
+else
+  BACKFILL_STATUS="해당 없음"
+fi
+echo
+
 # ---- 4. 컨피그 스키마 diff (안내만, 자동 추가 금지) --------------------------
 
 TARGET_CONFIG="${TARGET_DIR}/harness.config.yaml"
@@ -216,6 +232,7 @@ if [ "${#GONE_KEYS[@]}" -gt 0 ]; then
 else
   say "사라진 설정 키: 없음"
 fi
+say "승인 게이트: 기존 작업 백필 — ${BACKFILL_STATUS}"
 say "컨피그 검증: ${CONFIG_VALID}"
 echo
 ok "업데이트 완료 — 재세팅 없이 기존 워크플로를 바로 사용할 수 있습니다."

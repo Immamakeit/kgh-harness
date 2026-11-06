@@ -254,6 +254,106 @@ yaml_top_keys() {
   grep -oE '^[A-Za-z_][A-Za-z0-9_]*:' "$f" | sed 's/:$//' | sort -u || true
 }
 
+# ---- YAML 중첩 스칼라 읽기 ---------------------------------------------------
+
+# yaml_get <yaml파일> <점 경로>  → 값을 stdout (없으면 빈 출력, 종료코드 0)
+#   예: yaml_get harness.config.yaml workdocs.names.design  → 설계.md
+#
+# PyYAML 없이도 돌아야 하는 자리(설치·게이트)에서만 쓴다. 2칸 들여쓰기를 전제하는
+# 최소 파서다 — 값에 ':' 나 '#' 가 들어가는 키(commit.format 등)에는 쓰지 않는다.
+#
+# ⚠ 같은 awk 가 adapters/claude/hooks/pre-tool-use.sh 에도 들어 있다. 의도적 중복이다 —
+#   런타임 훅은 설치 스크립트에 의존하지 않아야 한다(설치가 깨져도 게이트는 살아 있어야
+#   하고, 매 도구 호출 비용을 최소로 둬야 한다). 드리프트는 회귀가 고정한다
+#   (tests/install/run-tests.sh "게이트 — 승인 마커 계약" 의 양쪽 일치 케이스).
+yaml_get() {
+  local file="$1" path="$2"
+  [ -f "$file" ] || return 0
+  awk -v path="$path" '
+    { raw = $0
+      sub(/#.*$/, "", raw)
+      if (raw ~ /^[[:space:]]*$/) next
+      n = match(raw, /[^ ]/); if (n == 0) next
+      ind = n - 1
+      rest = substr(raw, n)
+      if (substr(rest, 1, 1) == "-") next
+      ci = index(rest, ":"); if (ci == 0) next
+      key = substr(rest, 1, ci - 1)
+      val = substr(rest, ci + 1)
+      gsub(/^[ \t]+|[ \t]+$/, "", val)
+      gsub(/^"|"$/, "", val); gsub(/^'"'"'|'"'"'$/, "", val)
+      lvl = int(ind / 2)
+      stack[lvl] = key
+      for (i = lvl + 1; i < 10; i++) stack[i] = ""
+      cur = stack[0]
+      for (i = 1; i <= lvl; i++) cur = cur "." stack[i]
+      if (cur == path && val != "") { print val; exit }
+    }' "$file"
+}
+
+# workdocs_root <프로젝트경로>  → 작업 문서 루트 절대경로를 stdout
+workdocs_root() {
+  local target="$1" rel
+  rel="$(yaml_get "${target}/harness.config.yaml" "workdocs.path")"
+  [ -n "$rel" ] || rel=".harness/work"
+  case "$rel" in
+    /*) printf '%s\n' "$rel" ;;
+    *)  printf '%s/%s\n' "$target" "$rel" ;;
+  esac
+}
+
+# design_doc_name <프로젝트경로>  → 설계 문서 파일명을 stdout
+design_doc_name() {
+  local n
+  n="$(yaml_get "${1}/harness.config.yaml" "workdocs.names.design")"
+  [ -n "$n" ] || n="설계.md"
+  printf '%s\n' "$n"
+}
+
+# write_approval_marker <작업디렉터리> <작업명> <승인경로> <설계문서명> [<프로젝트루트>]
+# 마커는 **언제·어떤 경로로** 승인됐는지를 적는다. 모델이 마커를 만들 수는 있어도
+# 조용히 만들 수는 없게 하는 것이 목적이다 — git diff 에 그대로 드러난다.
+#
+# 설계 문서 경로는 **프로젝트 루트 기준 상대경로**로 적는다. 절대경로를 적으면 마커가
+# 커밋될 때 그 머신의 경로가 이력에 박힌다(실측: 스크래치패드 경로가 들어갔다).
+write_approval_marker() {
+  local dir="$1" task="$2" via="$3" design="$4" root="${5:-}" rel
+  rel="$dir"
+  if [ -n "$root" ]; then
+    case "$dir" in "${root}/"*) rel="${dir#"${root}/"}" ;; esac
+  fi
+  {
+    printf '# kgh-harness 승인 마커 — 이 파일이 있으면 그 작업은 ⑤ 승인을 통과한 것이다.\n'
+    printf '# 지우면 그 작업은 다시 "승인 대기" 가 된다 (게이트 재무장).\n'
+    printf '작업명=%s\n' "$task"
+    printf '승인시각=%s\n' "$(date -Iseconds 2>/dev/null || date)"
+    printf '승인경로=%s\n' "$via"
+    printf '설계문서=%s\n' "${rel}/${design}"
+  } > "${dir}/.approved"
+}
+
+# backfill_approvals <프로젝트경로>  → 백필한 개수를 stdout (로그는 stderr)
+#
+# 설계 §2-2 "부트스트랩 함정" 방어. 승인 마커 부재를 "승인 전"으로 읽는 게이트를
+# 기존 프로젝트에 얹으면, **이미 끝난 작업 전부가 승인 대기로 판정되어 설치 직후 모든
+# 편집이 차단된다**(이 레포에서 실측: 13건이 일제히 "대기"로 떨어졌다). 설치·업데이트
+# 시점에 한 번 백필하고, 그 사실과 되돌리는 법을 요약에 낸다.
+backfill_approvals() {
+  local target="$1" root design count=0 d task f
+  root="$(workdocs_root "$target")"
+  design="$(design_doc_name "$target")"
+  if [ ! -d "$root" ]; then printf '0\n'; return 0; fi
+  while IFS= read -r f; do
+    [ -n "$f" ] || continue
+    d="$(dirname "$f")"
+    [ -f "${d}/.approved" ] && continue
+    task="$(basename "$(dirname "$d")")"
+    write_approval_marker "$d" "$task" "backfill(게이트 도입 전 작업)" "$design" "$target"
+    count=$((count + 1))
+  done < <(find "$root" -mindepth 1 -maxdepth 4 -type f -name "$design" 2>/dev/null | sort)
+  printf '%s\n' "$count"
+}
+
 # ---- 실행체 실존 예외처리 (B7, 설계 §3-4 L1) --------------------------------
 
 # read_active_harness <yaml파일>  → active_harness 값(주석·따옴표 제거)을 stdout

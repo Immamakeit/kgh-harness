@@ -303,16 +303,19 @@ CLAUDE_SETTINGS="${CLAUDE_SETTINGS_DIR}/settings.json"
 # settings.json에 문자 그대로 기록되어 나중에 Claude Code 세션이 훅을 실행할 때
 # 그 세션의 환경변수로 확장되어야 하는 리터럴 문자열이다.
 HOOK_CMD='"$CLAUDE_PROJECT_DIR"/.harness/adapters/claude/hooks/session-start.sh'
+# PreToolUse — ⑤ 승인 게이트의 집행체. matcher 로 쓰기 계열 도구만 받아 평시 호출을 줄인다.
+GATE_CMD='"$CLAUDE_PROJECT_DIR"/.harness/adapters/claude/hooks/pre-tool-use.sh'
+GATE_MATCHER='Edit|Write|MultiEdit|NotebookEdit|Bash'
 HOOK_STATUS="수동 연결 필요"
 
 if [ "$HAVE_PYTHON3" -eq 1 ]; then
   mkdir -p "$CLAUDE_SETTINGS_DIR"
-  if python3 - "$CLAUDE_SETTINGS" "$HOOK_CMD" <<'PYEOF'
+  if python3 - "$CLAUDE_SETTINGS" "$HOOK_CMD" "$GATE_CMD" "$GATE_MATCHER" <<'PYEOF'
 import json
 import os
 import sys
 
-path, cmd = sys.argv[1], sys.argv[2]
+path, start_cmd, gate_cmd, gate_matcher = sys.argv[1:5]
 data = {}
 if os.path.exists(path):
     with open(path, encoding="utf-8") as f:
@@ -320,33 +323,59 @@ if os.path.exists(path):
     data = json.loads(raw) if raw else {}
 
 hooks = data.setdefault("hooks", {})
-session_start = hooks.setdefault("SessionStart", [])
 
-already = any(
-    h.get("command") == cmd
-    for group in session_start
-    for h in group.get("hooks", [])
-)
-if not already:
-    session_start.append({"hooks": [{"type": "command", "command": cmd}]})
+
+def ensure(event, cmd, matcher=None):
+    """이미 있으면 건드리지 않는다(멱등). 남의 훅은 보존한다."""
+    groups = hooks.setdefault(event, [])
+    for group in groups:
+        for h in group.get("hooks", []):
+            if h.get("command") == cmd:
+                return
+    entry = {"hooks": [{"type": "command", "command": cmd}]}
+    if matcher:
+        entry["matcher"] = matcher
+    groups.append(entry)
+
+
+ensure("SessionStart", start_cmd)
+ensure("PreToolUse", gate_cmd, gate_matcher)
 
 with open(path, "w", encoding="utf-8") as f:
     json.dump(data, f, ensure_ascii=False, indent=2)
     f.write("\n")
 PYEOF
   then
-    HOOK_STATUS="연결됨 (기존 훅 보존)"
-    ok "SessionStart 훅 연결 완료: ${CLAUDE_SETTINGS}"
+    HOOK_STATUS="연결됨 — SessionStart + PreToolUse 게이트 (기존 훅 보존)"
+    ok "훅 연결 완료 (SessionStart · PreToolUse 승인 게이트): ${CLAUDE_SETTINGS}"
   else
     HOOK_STATUS="병합 실패 — 수동 연결 필요"
     warn "settings.json 병합 실패 — 아래 내용을 수동으로 추가하세요."
     warn "  파일: ${CLAUDE_SETTINGS}"
     warn "  hooks.SessionStart 배열에: { \"hooks\": [ { \"type\": \"command\", \"command\": \"${HOOK_CMD}\" } ] }"
+    warn "  hooks.PreToolUse 배열에: { \"matcher\": \"${GATE_MATCHER}\", \"hooks\": [ { \"type\": \"command\", \"command\": \"${GATE_CMD}\" } ] }"
   fi
 else
   warn "python3 미발견 — 훅 자동 연결 불가. 아래 내용을 수동으로 추가하세요."
   warn "  파일: ${CLAUDE_SETTINGS}"
   warn "  hooks.SessionStart 배열에: { \"hooks\": [ { \"type\": \"command\", \"command\": \"${HOOK_CMD}\" } ] }"
+  warn "  hooks.PreToolUse 배열에: { \"matcher\": \"${GATE_MATCHER}\", \"hooks\": [ { \"type\": \"command\", \"command\": \"${GATE_CMD}\" } ] }"
+fi
+echo
+
+# ---- 6b. 승인 마커 백필 (게이트 부트스트랩 함정 방어) ----------------------
+# 설계 §2-2: 승인 마커 부재를 "승인 전"으로 읽는 게이트를 기존 프로젝트에 얹으면 이미
+# 끝난 작업 전부가 승인 대기로 판정되어 설치 직후 모든 편집이 차단된다. 한 번 백필하고
+# 되돌리는 법을 함께 알린다 — **진행 중인 작업이 있으면 그 마커를 지워야 한다.**
+
+BACKFILLED="$(backfill_approvals "$TARGET_DIR")"
+if [ "$BACKFILLED" -gt 0 ]; then
+  ok "기존 작업 ${BACKFILLED}건을 '승인 완료'로 표시했습니다 (게이트가 이미 끝난 작업을 막지 않도록)"
+  note "  진행 중인(아직 승인 안 받은) 작업이 있으면 그 작업의 .approved 를 지우세요 —"
+  note "  목록: ${HARNESS_DIR}/install/approve --list"
+  BACKFILL_STATUS="${BACKFILLED}건 승인 표시"
+else
+  BACKFILL_STATUS="해당 없음"
 fi
 echo
 
@@ -451,7 +480,8 @@ say "=== 설치 요약 ==="
 say "대상 경로   : ${TARGET_DIR}"
 say "소스 커밋   : ${SOURCE_COMMIT}"
 say "컨피그      : ${CONFIG_STATUS} (${TARGET_CONFIG})"
-say "SessionStart 훅: ${HOOK_STATUS}"
+say "훅          : ${HOOK_STATUS}"
+say "승인 게이트 : gate.enforce=$(yaml_get "${TARGET_CONFIG}" gate.enforce) · 기존 작업 백필: ${BACKFILL_STATUS}"
 say "superpowers : ${SUPERPOWERS_STATUS}"
 say "컨피그 검증: ${CONFIG_VALID}"
 say ".gitignore  : ${GITIGNORE_STATUS}"
@@ -462,5 +492,6 @@ if [ "$CONFIG_CREATED" -eq 1 ] && [ -z "$VAULT_ROOT" ]; then
 fi
 say "  - ${TARGET_DIR}에서 Claude Code 세션을 시작하면 SessionStart 훅으로 플레이북이 로드됩니다"
 say "  - PRD.md·CLAUDE.md·AGENTS.md가 없으면 그 세션에서 초기 세팅을 제안합니다 (set-initial)"
+say "  - ⑤ 설계 승인 후에는 ${HARNESS_DIR}/install/approve <작업명> 으로 게이트를 풉니다"
 say "  - 다음 업데이트: ${HARNESS_DIR}/install/update"
 ok "설치 완료"
