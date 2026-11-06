@@ -26,7 +26,7 @@ workdocs:
 storage:
   enabled: true
   tool: obsidian-cli
-  vault_root: /mnt/c/gh-obsidian-vaults/LLM-Wiki   # 지정됨 2026-08-14 (미지정 시 HRN-W010)
+  vault_root: /mnt/c/gh-vaults/llm-wiki   # 재지정 2026-11-06 — 옛 경로 /mnt/c/gh-obsidian-vaults/LLM-Wiki 는 소멸했다(HRN-W023 으로 적발)
   path_template: "wiki/프로젝트/<프로젝트>/_work/<작업명>/<YYYY-MM-DD>"   # 카테고리=프로젝트 확정
   approval: auto                 # auto = 판정 통과 시 자동 저장 | required = 저장 직전 확인
 
