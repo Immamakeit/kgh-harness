@@ -1,0 +1,6 @@
+# kgh-harness 승인 마커 — 이 파일이 있으면 그 작업은 ⑤ 승인을 통과한 것이다.
+# 지우면 그 작업은 다시 "승인 대기" 가 된다 (게이트 재무장).
+작업명=silent-failure-guard
+승인시각=2026-11-06T13:10:54+09:00
+승인경로=flag(비대화형 --by-user)
+설계문서=.harness/work/silent-failure-guard/2026-11-06/설계.md
