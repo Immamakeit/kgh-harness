@@ -18,6 +18,17 @@
 #
 # 종료코드 계약 (Claude Code PreToolUse): 0 = 통과, 2 = 차단(stderr 가 모델에게 전달됨).
 # -e 를 쓰지 않는다: 게이트 자체의 어떤 실패도 작업을 세우지 않는다(fail-open, HRN-W021).
+#
+# ⚠️ 출력 경로의 실측 제약 (공식 훅 문서):
+#   "Claude never sees stderr from a hook that exits 0. To read it yourself on events
+#    such as PreToolUse, enable debug logging."
+# 즉 **exit 0 + stderr 는 사용자도 모델도 못 본다** — 디버그 로깅을 켠 사람만 본다.
+# 그래서 통과시키면서 알려야 하는 모든 경고는 세 경로로 낸다:
+#   (1) .harness/gate.log 파일 기록 — 확실하다. 이것이 중심이다.
+#   (2) stdout JSON 의 systemMessage(사용자) · hookSpecificOutput.additionalContext(모델)
+#       — PreToolUse 에서 실제로 표시되는지는 **미확인**이라 보조로만 쓴다.
+#   (3) stderr — 디버그 로깅 사용자용. 비용 0 이라 남긴다.
+# 차단(exit 2)은 stderr 가 모델에게 전달되는 것이 문서로 확인되므로 그대로 둔다.
 set -uo pipefail
 
 INPUT="$(cat 2>/dev/null || true)"      # stdin 은 항상 먼저 비운다(SIGPIPE 방지)
@@ -25,10 +36,48 @@ INPUT="$(cat 2>/dev/null || true)"      # stdin 은 항상 먼저 비운다(SIGP
 PROJECT_DIR="${CLAUDE_PROJECT_DIR:-$PWD}"
 CONFIG="${PROJECT_DIR}/harness.config.yaml"
 
-fail_open() {   # HRN-W021 — 판정 전제 미충족. 통과시키고 사실만 알린다(silent 금지).
-  printf '⚠️ HRN-W021 — 승인 게이트 판정 전제 미충족(%s) — 이번 호출은 통과시킵니다.\n' "$1" >&2
-  printf '   조치: (a) 위 사유를 고친 뒤 재시도 (b) 게이트 없이 진행 — 게이트 고장이 작업을 세우지 않습니다.\n' >&2
+GATE_LOG="${PROJECT_DIR}/.harness/gate.log"
+GATE_NOTES=""
+
+# 통과 경로에서 전달할 경고를 모아둔다. 즉시 내지 않는 이유: 뒤에서 차단(exit 2)으로
+# 끝날 수도 있고, 그때는 stdout JSON 이 아니라 **차단 메시지 본문**에 섞어야 모델이 본다.
+note() { GATE_NOTES="${GATE_NOTES}${GATE_NOTES:+ · }$1"; }
+
+# 확실한 경로. 이 함수의 실패는 **조용히 넘긴다** — 로그를 못 써서 게이트가 작업을 세우면
+# fail-open 의 취지를 거스른다. 이 설계가 허용하는 유일한 침묵이고, 그래서 침묵을
+# 여기 한 곳에 **가둬** 둔다. 다른 어떤 경로도 조용히 끝나지 않는다.
+log_gate() {
+  local tool target
+  tool="$(printf '%s' "$INPUT" | grep -oE '"tool_name"[[:space:]]*:[[:space:]]*"[A-Za-z_]+"' | head -n1 | grep -oE '[A-Za-z_]+"$' | tr -d '"')"
+  target="$(printf '%s' "$INPUT" | grep -oE '"(file_path|command)"[[:space:]]*:[[:space:]]*"[^"]*"' | head -n1 | sed -E 's/.*:[[:space:]]*"//; s/"$//')"
+  mkdir -p "$(dirname "$GATE_LOG")" 2>/dev/null || return 0
+  printf '%s\t%s\t%s\t%s\t%s\n' \
+    "$(date -Iseconds 2>/dev/null || date 2>/dev/null || echo '?')" \
+    "$1" "$2" "${tool:-?}" "${target:-?}" >> "$GATE_LOG" 2>/dev/null || true
+}
+
+# 통과(exit 0)로 끝내면서 모아둔 경고를 세 경로로 낸다.
+pass_with_notes() {
+  [ -n "$GATE_NOTES" ] || exit 0
+  # permissionDecision 은 **넣지 않는다**: "allow" 는 권한 프롬프트를 건너뛴다. fail-open 의
+  # 뜻은 "훅이 없는 것처럼 진행"이지 권한 승격이 아니다 — 게이트 고장이 안전한 쪽이 아니라
+  # 반대쪽으로 실패하게 만들면 안 된다.
+  if command -v python3 >/dev/null 2>&1; then
+    GATE_MSG="$GATE_NOTES" python3 -I -c 'import json,os
+m = os.environ["GATE_MSG"]
+print(json.dumps({"systemMessage": m,
+                  "hookSpecificOutput": {"hookEventName": "PreToolUse",
+                                         "additionalContext": m}},
+                 ensure_ascii=False))' 2>/dev/null || true
+  fi
+  printf '%s\n' "$GATE_NOTES" >&2
   exit 0
+}
+
+fail_open() {   # HRN-W021 — 판정 전제 미충족. 통과시키고 사실을 세 경로로 알린다.
+  log_gate "W021" "fail-open: $1"
+  note "⚠️ HRN-W021 — 승인 게이트 판정 전제 미충족($1) — 이번 호출은 통과시킵니다. 조치: (a) 위 사유를 고친 뒤 재시도 (b) 게이트 없이 진행 — 게이트 고장이 작업을 세우지 않습니다. 기록: ${GATE_LOG}"
+  pass_with_notes
 }
 
 # ---- YAML 스칼라 읽기 (중첩 경로 지원, 2칸 들여쓰기 전제) --------------------
@@ -118,29 +167,49 @@ if [ -z "$VERDICT" ]; then
       ;;
     *) VERDICT="ALLOW	쓰기 도구 아님(휴리스틱)" ;;
   esac
-  printf '⚠️ HRN-W021 — python3 가 없어 게이트가 휴리스틱 판정으로 열화했습니다.\n' >&2
-  printf '   조치: (a) python3 를 설치하면 정확 판정으로 돌아옵니다 (b) 그대로 진행 — 판정은 보수적입니다.\n' >&2
+  # 즉시 내지 않고 모아둔다 — 이 경로는 아래에서 차단(exit 2)으로 끝날 수도 있고,
+  # 그때는 stdout JSON 이 아니라 차단 메시지 본문에 섞어야 모델이 본다.
+  log_gate "W021" "휴리스틱 열화: python3 부재 또는 판정기 실패"
+  note '⚠️ HRN-W021 — python3 가 없어 게이트가 휴리스틱 판정으로 열화했습니다. 조치: (a) python3 를 설치하면 정확 판정으로 돌아옵니다 (b) 그대로 진행 — 판정은 보수적입니다.'
 fi
 
 case "$VERDICT" in
   UNKNOWN*) fail_open "$(printf '%s' "$VERDICT" | cut -f2-)" ;;
-  ALLOW*)   exit 0 ;;
+  ALLOW*)   pass_with_notes ;;   # 모아둔 경고가 없으면 stdout 은 비어 있다(잡음 금지)
 esac
 
 BLOCKED_TOOL="$(printf '%s' "$VERDICT" | cut -f2)"
 BLOCKED_WHAT="$(printf '%s' "$VERDICT" | cut -f3)"
 
 if [ "$MODE" = "warn" ]; then
-  printf '⚠️ HRN-E016(warn) — ⑤ 설계 승인 전 구현입니다 (승인 대기: %s). gate.enforce 가 warn 이라 통과시킵니다.\n' "$PENDING" >&2
-  printf '   차단되지 않은 조작: %s %s\n' "$BLOCKED_TOOL" "$BLOCKED_WHAT" >&2
-  exit 0
+  # 구현 중 발견: 이 경로도 exit 0 + stderr 였다 — 즉 warn 모드의 경고를 아무도 보지
+  # 못했고, 그러면 warn 모드는 사실상 off 와 같다. fail_open 과 같은 세 경로로 낸다.
+  log_gate "E016" "warn 모드 통과: ${PENDING}"
+  note "$(printf '⚠️ HRN-E016(warn) — ⑤ 설계 승인 전 구현입니다 (승인 대기: %s). gate.enforce 가 warn 이라 통과시킵니다. 차단되지 않은 조작: %s %s' "$PENDING" "$BLOCKED_TOOL" "$BLOCKED_WHAT")"
+  pass_with_notes
 fi
+
+# 안내할 approve 경로를 **실제로 해석한다** (설계 §3-5). 하드코딩하면 소스 레포를
+# 도그푸딩할 때 없는 경로(.harness/install/approve)를 안내한다 — 실측으로 확인했다.
+# session-start.sh 와 같은 후보 탐색이다.
+log_gate "E016" "차단: ${PENDING}"
+
+APPROVE_CMD=".harness/install/approve"
+for _cand in "$SCRIPT_DIR/../../.." "$SCRIPT_DIR/../.." "$SCRIPT_DIR/.."; do
+  if [ -x "$_cand/install/approve" ]; then
+    APPROVE_CMD="$(cd "$_cand" && pwd)/install/approve"
+    break
+  fi
+done
 
 {
   printf '❌ HRN-E016 — ⑤ 설계 승인 전에는 구현할 수 없습니다 (승인 대기: %s)\n' "$PENDING"
   printf '   차단된 조작: %s %s\n' "$BLOCKED_TOOL" "$BLOCKED_WHAT"
   printf '   설계 문서  : %s/%s\n' "$PENDING_DIR" "$DESIGN"
-  printf '   조치: (a) 사용자에게 설계를 제시해 승인을 받은 뒤 `.harness/install/approve %s` 를 실행하십시오\n' "$PENDING"
+  # 모아둔 경고(휴리스틱 열화 등)를 차단 메시지에 섞는다 — exit 2 의 stderr 는 모델에게
+  # 전달되는 것이 문서로 확인된 유일한 경로다.
+  [ -n "$GATE_NOTES" ] && printf '   %s\n' "$GATE_NOTES"
+  printf '   조치: (a) 사용자에게 설계를 제시해 승인을 받은 뒤 `%s %s` 를 실행하십시오\n' "$APPROVE_CMD" "$PENDING"
   printf '         (b) 이 작업에 게이트를 적용하지 않으려면 harness.config.yaml 의 gate.enforce 를 off 로 바꾸십시오\n'
   printf '   (작업 문서 자체는 계속 쓸 수 있습니다 — %s 밑은 차단 대상이 아닙니다)\n' "$WORKDOCS"
 } >&2
