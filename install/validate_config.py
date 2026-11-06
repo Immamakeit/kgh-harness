@@ -242,6 +242,20 @@ def main(config_path, schema_path, adapter_dir, source_dir):
                 print(f"{C_WARN}⚠ effort 는 {active} 어댑터의 Agent 디스패치에서 "
                       f"지원되지 않아 무시됩니다 — 지정된 곳: {', '.join(used)}{C_RST}")
 
+    # ── ②-a storage.vault_root 실존 ───────────────────────────────────────
+    # W010(미지정)은 "넣어라", W023(죽은 경로)은 "고쳐라" — 조치가 다르므로 코드를 나눈다.
+    # 차단하지 않는다: 볼트가 다른 PC 것이거나 드라이브가 안 붙었을 수 있다. 실존하지
+    # 않는다고 설치·검증 전체를 세우는 것은 "가장 덜 놀라운 쪽"이 아니다(설계 §3-1).
+    # 대신 ⑪ 저장은 건너뛴다 — 그 집행은 obsidian-cli 스킬의 저장 절차 1단계가 한다.
+    # 상태 이름(ok/empty/missing)은 lib.sh vault_root_state 와 일부러 같다.
+    vr = (cfg.get("storage") or {}).get("vault_root")
+    if vr not in (None, "", "~", "null"):
+        checked += 1
+        if not os.path.isdir(str(vr)):
+            warn("W023", f"storage.vault_root 의 경로가 없습니다 ({vr})",
+                 "실제 vault 경로로 고친 뒤 install/setup 을 다시 실행하세요",
+                 "다른 PC 의 볼트라면 그대로 두세요 — 문서는 로컬에 쌓이고 ⑪ 저장만 미뤄집니다")
+
     # ── ②-b workdocs.names 완결성 ─────────────────────────────────────────
     # 역할 3개는 워크플로 게이트와 묶여 있다. 부분 지정은 "나머지 하나를 무엇으로
     # 부를지 아무도 모르는" 상태라 차단한다 — 조용히 기본값으로 메우면 문서 이름이
