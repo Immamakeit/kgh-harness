@@ -2285,11 +2285,224 @@ test_skill_exposure() {
   assert_absent "${t}/.harness/.github" "CI 정의는 배포되지 않는다 (개발용)"
 }
 
+
+# ---- silent-failure-guard 회귀 -----------------------------------------------
+# 두 그룹 모두 "실패가 아무에게도 안 보인다"는 한 병을 고정한다. 느슨해지기 쉬운
+# 계약이라 숫자와 키 부재까지 못박는다.
+
+# gate_call 은 stderr 만 돌려준다. 여기서는 stdout(JSON)도 봐야 하므로 셋을 분리한다.
+# "rc<TAB>stdout경로<TAB>stderr경로" 를 돌려준다.
+gate_call3() {
+  local target="$1" json="$2" rc=0 o e
+  o="$(mktemp "${WORK}/go.XXXXXX")"; e="$(mktemp "${WORK}/ge.XXXXXX")"
+  printf '%s' "$json" | CLAUDE_PROJECT_DIR="$target" bash "$GATE_HOOK" >"$o" 2>"$e" || rc=$?
+  printf '%s\t%s\t%s' "$rc" "$o" "$e"
+}
+
+# storage.vault_root 만 든 최소 컨피그
+vault_fixture() {
+  local f="$1" value="$2"
+  cat > "$f" <<EOF
+active_harness: claude
+storage:
+  vault_root: ${value}
+EOF
+}
+
+test_vault_root_guard() {
+  group "vault_root 가드 — HRN-W023 (조용한 오배송 차단)"
+
+  local t st out
+  t="$(mktemp -d "${WORK}/vr.XXXXXX")"
+
+  # (1~3) 3상태 — lib.sh 와 검증기가 같은 이름을 쓴다
+  mkdir -p "${t}/realvault"
+  vault_fixture "${t}/ok.yaml" "${t}/realvault"
+  st="$(vault_root_state "${t}/ok.yaml" | cut -f1)"
+  assert_eq "$st" "ok" "실존 경로 → ok"
+
+  vault_fixture "${t}/empty.yaml" "null"
+  st="$(vault_root_state "${t}/empty.yaml" | cut -f1)"
+  assert_eq "$st" "empty" "null → empty (YAML 미지정)"
+
+  vault_fixture "${t}/dead.yaml" "${t}/no-such-vault"
+  st="$(vault_root_state "${t}/dead.yaml" | cut -f1)"
+  assert_eq "$st" "missing" "없는 경로 → missing"
+
+  # (4) 하필 "null" 이라는 이름의 디렉터리가 있어도 empty 다.
+  #     접지 않으면 YAML 미지정이 ok 로 오판되어 저장이 ./null 로 간다.
+  ( cd "$t" && mkdir -p null && printf 'storage:\n  vault_root: null\n' > nulldir.yaml )
+  st="$(cd "$t" && vault_root_state nulldir.yaml | cut -f1)"
+  assert_eq "$st" "empty" '"null" 이름의 디렉터리가 있어도 empty (오판 방지)'
+
+  # (5~7) 검증기 — W023 은 비차단이고, W010 영역을 침범하지 않는다
+  if command -v python3 >/dev/null 2>&1 && python3 -c 'import yaml' 2>/dev/null; then
+    local rc
+    cp "${REPO_ROOT}/harness.config.yaml" "${t}/full-dead.yaml"
+    python3 -I -c 'import io,sys,re
+p=sys.argv[1]; s=io.open(p,encoding="utf-8").read()
+io.open(p,"w",encoding="utf-8").write(re.sub(r"^  vault_root: .*$","  vault_root: /nonexistent/kgh-test-vault",s,count=1,flags=re.M))' "${t}/full-dead.yaml"
+    rc=0
+    out="$(python3 -I "${REPO_ROOT}/install/validate_config.py" "${t}/full-dead.yaml" \
+            "${REPO_ROOT}/config/schema.yaml" "${REPO_ROOT}/adapters" "${REPO_ROOT}" 2>&1)" || rc=$?
+    assert_contains "$out" "HRN-W023" "검증기: 죽은 경로 → W023"
+    assert_eq "$rc" "0" "검증기: W023 은 비차단 (종료코드 0)"
+
+    cp "${REPO_ROOT}/harness.config.yaml" "${t}/full-ok.yaml"
+    python3 -I -c 'import io,sys,re
+p=sys.argv[1]; s=io.open(p,encoding="utf-8").read()
+io.open(p,"w",encoding="utf-8").write(re.sub(r"^  vault_root: .*$","  vault_root: "+sys.argv[2],s,count=1,flags=re.M))' \
+      "${t}/full-ok.yaml" "${t}/realvault"
+    out="$(python3 -I "${REPO_ROOT}/install/validate_config.py" "${t}/full-ok.yaml" \
+            "${REPO_ROOT}/config/schema.yaml" "${REPO_ROOT}/adapters" "${REPO_ROOT}" 2>&1)" || true
+    assert_not_contains "$out" "HRN-W023" "검증기: 실존 경로 → W023 없음"
+
+    out="$(python3 -I "${REPO_ROOT}/install/validate_config.py" \
+            "${REPO_ROOT}/config/harness.config.template.yaml" \
+            "${REPO_ROOT}/config/schema.yaml" "${REPO_ROOT}/adapters" "${REPO_ROOT}" 2>&1)" || true
+    assert_not_contains "$out" "HRN-W023" "검증기: 미지정(null) → W023 없음 (W010 영역 불침범)"
+  else
+    note "python3/PyYAML 없음 — 검증기 W023 단정 3건 건너뜀"
+  fi
+
+  # (8~10) setup 비대화형 + 죽은 경로 → 묻지 않고, 경고하고, 값을 보존한다
+  local p2 log
+  p2="$(mktemp -d "${WORK}/vrsetup.XXXXXX")"
+  ( cd "$p2" && git init -q . )
+  "${INSTALL_DIR}/setup" "$p2" </dev/null >/dev/null 2>&1 || true
+  if [ -f "${p2}/harness.config.yaml" ]; then
+    python3 -I -c 'import io,sys,re
+p=sys.argv[1]; s=io.open(p,encoding="utf-8").read()
+io.open(p,"w",encoding="utf-8").write(re.sub(r"^  vault_root: .*$","  vault_root: /nonexistent/kgh-dead",s,count=1,flags=re.M))' \
+      "${p2}/harness.config.yaml" 2>/dev/null || true
+    log="$(mktemp "${WORK}/vrlog.XXXXXX")"
+    "${INSTALL_DIR}/setup" "$p2" </dev/null >"$log" 2>&1 || true
+    assert_contains "$(cat "$log")" "HRN-W023" "setup: 죽은 경로를 보고한다"
+    assert_not_contains "$(cat "$log")" "storage.vault_root 를 지정하시겠습니까" \
+      "setup: 비대화형에서는 묻지 않는다 (CI 를 세우지 않는다)"
+    assert_contains "$(cat "${p2}/harness.config.yaml")" "/nonexistent/kgh-dead" \
+      "setup: 비대화형은 컨피그 값을 고치지 않는다"
+    # (11) gate.log 는 커밋 대상이 아니다
+    assert_contains "$(cat "${p2}/.gitignore" 2>/dev/null || echo '')" "/.harness/gate.log" \
+      ".gitignore 가 gate.log 를 제외한다"
+  else
+    note "setup 산출물 없음 — setup W023 단정 4건 건너뜀"
+  fi
+
+  # (12) 배포에서 gate.log 가 빠진다
+  assert_contains "$(cat "${REPO_ROOT}/.harnessignore")" "gate.log" \
+    ".harnessignore 가 gate.log 를 배포에서 제외한다"
+}
+
+test_fail_open_visibility() {
+  group "fail-open 가시성 — exit 0 + stderr 는 아무도 못 본다"
+
+  local t r rc o e n1 n2
+  t="$(mktemp -d "${WORK}/fo.XXXXXX")"
+  gate_fixture "$t"
+  : > "${t}/.harness/work/demo/2026-11-06/설계.md"     # 무장 (.approved 없음)
+
+  # (1) 미무장 상태에서는 stdout 이 비어 있어야 한다 — 매 호출 잡음 금지
+  local u
+  u="$(mktemp -d "${WORK}/fo-unarmed.XXXXXX")"
+  gate_fixture "$u"                                    # 설계 문서 없음 → 미무장
+  r="$(gate_call3 "$u" '{"tool_name":"Edit","tool_input":{"file_path":"src/x.ts"}}')"
+  rc="$(printf '%s' "$r" | cut -f1)"; o="$(printf '%s' "$r" | cut -f2)"
+  assert_eq "$rc" "0" "미무장 → 통과"
+  assert_eq "$(wc -c < "$o" | tr -d ' ')" "0" "미무장 → stdout 0바이트 (잡음 금지)"
+
+  # (2~6) fail-open: 깨진 입력 → 통과 + 로그 + JSON 3채널
+  n1=0; [ -f "${t}/.harness/gate.log" ] && n1="$(wc -l < "${t}/.harness/gate.log")"
+  r="$(gate_call3 "$t" 'not json at all')"
+  rc="$(printf '%s' "$r" | cut -f1)"; o="$(printf '%s' "$r" | cut -f2)"; e="$(printf '%s' "$r" | cut -f3)"
+  assert_eq "$rc" "0" "fail-open → 통과시킨다 (게이트 고장이 작업을 세우지 않는다)"
+  assert_present "${t}/.harness/gate.log" "fail-open 이 gate.log 를 남긴다"
+  n2="$(wc -l < "${t}/.harness/gate.log")"
+  assert_eq "$((n2 - n1))" "1" "fail-open 1회 → 로그 1줄"
+  assert_contains "$(cat "${t}/.harness/gate.log")" "W021" "로그 줄이 W021 로 분류된다"
+  assert_contains "$(cat "$e")" "HRN-W021" "stderr 에도 남는다 (디버그 로깅 사용자용)"
+
+  # (7~9) stdout JSON 계약 — 여기가 핵심이다
+  if command -v python3 >/dev/null 2>&1; then
+    local j
+    j="$(python3 -I -c 'import json,sys
+try:
+    d = json.load(open(sys.argv[1]))
+except Exception as ex:
+    print("INVALID"); raise SystemExit(0)
+raw = json.dumps(d)
+print("ok"
+      + ("|sys" if "systemMessage" in d else "")
+      + ("|ctx" if "additionalContext" in d.get("hookSpecificOutput", {}) else "")
+      + ("|PERM" if "permissionDecision" in raw else ""))' "$o")"
+    assert_contains "$j" "ok" "fail-open stdout 이 유효 JSON 이다"
+    assert_contains "$j" "|sys" "stdout JSON 에 systemMessage 가 있다 (사용자 채널)"
+    assert_contains "$j" "|ctx" "stdout JSON 에 additionalContext 가 있다 (모델 채널)"
+    # allow 는 권한 프롬프트를 건너뛴다. fail-open 이 권한 승격이 되면 안전한 쪽이
+    # 아니라 반대쪽으로 실패한다 — 키 부재를 계약으로 못박는다.
+    assert_not_contains "$j" "|PERM" "stdout JSON 에 permissionDecision 이 없다 (권한 승격 금지)"
+  else
+    note "python3 없음 — stdout JSON 단정 4건 건너뜀"
+  fi
+
+  # (10~11) 차단 경로는 JSON 을 내지 않고, 안내하는 approve 가 실제로 존재한다
+  r="$(gate_call3 "$t" '{"tool_name":"Edit","tool_input":{"file_path":"src/x.ts"}}')"
+  rc="$(printf '%s' "$r" | cut -f1)"; o="$(printf '%s' "$r" | cut -f2)"; e="$(printf '%s' "$r" | cut -f3)"
+  assert_eq "$rc" "2" "무장 + block → 차단"
+  assert_eq "$(wc -c < "$o" | tr -d ' ')" "0" "차단 시 stdout 에 JSON 을 내지 않는다"
+  local apath
+  apath="$(grep -oE '`[^`]*/approve [^`]*`' "$e" | head -n1 | tr -d '`' | awk '{print $1}')"
+  if [ -n "$apath" ]; then
+    assert_present "$apath" "차단 메시지가 안내하는 approve 경로가 실제로 존재한다"
+  else
+    assert_eq "found" "notfound" "차단 메시지에서 approve 경로를 못 찾았다"
+  fi
+
+  # (12~13) warn 모드도 같은 침묵이었다 — 이제 보여야 한다
+  local w
+  w="$(mktemp -d "${WORK}/fo-warn.XXXXXX")"
+  gate_fixture "$w" "warn"
+  : > "${w}/.harness/work/demo/2026-11-06/설계.md"
+  r="$(gate_call3 "$w" '{"tool_name":"Edit","tool_input":{"file_path":"src/x.ts"}}')"
+  rc="$(printf '%s' "$r" | cut -f1)"; o="$(printf '%s' "$r" | cut -f2)"
+  assert_eq "$rc" "0" "warn 모드 → 통과시킨다"
+  assert_contains "$(cat "$o")" "systemMessage" "warn 모드 경고가 stdout JSON 으로 나간다"
+  assert_contains "$(cat "${w}/.harness/gate.log" 2>/dev/null || echo '')" "E016" \
+    "warn 모드 통과가 gate.log 에 남는다"
+
+  # (14) 로그를 못 써도 게이트는 작업을 세우지 않는다 (침묵을 한 함수에 가둔 결과)
+  local ro
+  ro="$(mktemp -d "${WORK}/fo-ro.XXXXXX")"
+  gate_fixture "$ro"
+  : > "${ro}/.harness/work/demo/2026-11-06/설계.md"
+  chmod a-w "${ro}/.harness"
+  r="$(gate_call3 "$ro" 'broken input')"
+  rc="$(printf '%s' "$r" | cut -f1)"
+  chmod u+w "${ro}/.harness"
+  assert_eq "$rc" "0" "gate.log 를 못 써도 통과시킨다 (로그 실패가 작업을 세우지 않는다)"
+
+  # (15~16) approve --list 가 fail-open 누적을 보고한다 / 0건이면 침묵한다
+  local lt out
+  lt="$(mktemp -d "${WORK}/fo-list.XXXXXX")"
+  "${INSTALL_DIR}/setup" "$lt" </dev/null >/dev/null 2>&1 || true
+  if [ -x "${lt}/.harness/install/approve" ]; then
+    out="$("${lt}/.harness/install/approve" --list 2>&1)" || true
+    assert_not_contains "$out" "fail-open 기록" "fail-open 0건이면 그 줄을 내지 않는다"
+    printf '2026-11-06T13:00:00+09:00\tW021\tfail-open: 테스트\tEdit\tfoo\n' > "${lt}/.harness/gate.log"
+    out="$("${lt}/.harness/install/approve" --list 2>&1)" || true
+    assert_contains "$out" "fail-open 기록 1건" "approve --list 가 fail-open 누적을 보고한다"
+  else
+    note "approve 미배포 — --list 단정 2건 건너뜀"
+  fi
+}
+
 test_hook_doc_state
 test_gate_hook
 test_approve_cli
 test_injection_modes
 test_skill_exposure
+test_vault_root_guard
+test_fail_open_visibility
 
 printf '\n=== 요약 ===\n'
 printf 'PASS: %d  FAIL: %d\n' "$PASS" "$FAIL"
