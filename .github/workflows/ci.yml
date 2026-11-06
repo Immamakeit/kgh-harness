@@ -1,0 +1,41 @@
+# kgh-harness CI — 로컬 수동 실행에만 의존하던 회귀를 push 마다 돌린다.
+# 개인 도구이지만 회귀 300여 케이스가 썩는 것이 제일 비싸다.
+name: ci
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+  workflow_dispatch:
+
+jobs:
+  contract:
+    name: 계약 회귀 · 정적 검사
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: 전제 설치 (shellcheck · PyYAML)
+        run: |
+          sudo apt-get update -qq
+          sudo apt-get install -y -qq shellcheck rsync
+          python3 -m pip install --quiet --break-system-packages pyyaml
+
+      - name: shellcheck (경고 이상이면 실패)
+        run: |
+          shellcheck -S warning \
+            install/setup install/update install/approve install/lib.sh install/validate-config \
+            adapters/claude/hooks/*.sh \
+            tests/install/run-tests.sh
+
+      - name: python 컴파일
+        run: python3 -m py_compile install/validate_config.py adapters/claude/hooks/gate_decide.py
+
+      - name: 컨피그 검증 — 소스 레포 자신
+        run: ./install/validate-config harness.config.yaml
+
+      - name: 컨피그 검증 — 배포 템플릿
+        run: ./install/validate-config config/harness.config.template.yaml
+
+      - name: 설치·업데이트·게이트 계약 회귀
+        run: tests/install/run-tests.sh
