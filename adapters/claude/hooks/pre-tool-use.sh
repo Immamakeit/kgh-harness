@@ -19,16 +19,19 @@
 # 종료코드 계약 (Claude Code PreToolUse): 0 = 통과, 2 = 차단(stderr 가 모델에게 전달됨).
 # -e 를 쓰지 않는다: 게이트 자체의 어떤 실패도 작업을 세우지 않는다(fail-open, HRN-W021).
 #
-# ⚠️ 출력 경로의 실측 제약 (공식 훅 문서):
-#   "Claude never sees stderr from a hook that exits 0. To read it yourself on events
-#    such as PreToolUse, enable debug logging."
-# 즉 **exit 0 + stderr 는 사용자도 모델도 못 본다** — 디버그 로깅을 켠 사람만 본다.
-# 그래서 통과시키면서 알려야 하는 모든 경고는 세 경로로 낸다:
-#   (1) .harness/gate.log 파일 기록 — 확실하다. 이것이 중심이다.
-#   (2) stdout JSON 의 systemMessage(사용자) · hookSpecificOutput.additionalContext(모델)
-#       — PreToolUse 에서 실제로 표시되는지는 **미확인**이라 보조로만 쓴다.
-#   (3) stderr — 디버그 로깅 사용자용. 비용 0 이라 남긴다.
-# 차단(exit 2)은 stderr 가 모델에게 전달되는 것이 문서로 확인되므로 그대로 둔다.
+# ⚠️ 출력 경로 — 2026-11-06 실측 (Claude Code 2.1.319, headless 세션에 실제로 물려서
+#    서로 다른 마커를 채널별로 심어 측정했다. 같은 문장을 세 곳에 내는 것은 중복이
+#    아니다 — **수신자가 완전히 갈린다**):
+#   (1) .harness/gate.log           → 파일. 사후 추적이 되는 유일한 경로. 중심이다.
+#   (2) stdout JSON systemMessage   → **사용자만** 본다. `system/informational`
+#       (level=notice) 이벤트로 `PreToolUse:<도구> says: …` 형태로 표시된다.
+#       모델 컨텍스트에는 들어가지 않는다.
+#   (3) stdout JSON hookSpecificOutput.additionalContext → **모델만** 받는다.
+#       사용자 화면에는 뜨지 않는다.
+#   (4) stderr + exit 0             → **아무도 못 본다.** 디버그 로그에만 남는다.
+#       공식 문서대로: "Claude never sees stderr from a hook that exits 0."
+# 즉 통과시키면서 알려야 하는 경고는 (1)+(2)+(3) 을 전부 내야 둘 다에게 닿는다.
+# 차단(exit 2)의 stderr 는 모델에게 전달된다(문서 + 실측).
 set -uo pipefail
 
 INPUT="$(cat 2>/dev/null || true)"      # stdin 은 항상 먼저 비운다(SIGPIPE 방지)
@@ -155,7 +158,8 @@ if command -v python3 >/dev/null 2>&1 && [ -f "$DECIDER" ]; then
 fi
 
 if [ -z "$VERDICT" ]; then
-  # python3 부재·실패 → 휴리스틱으로 열화한다. 열화 사실을 숨기지 않는다.
+  # 판정 실패(python3 부재·판정기 부재·판정기 오류) → 휴리스틱으로 열화한다.
+  # 열화 사실을 숨기지 않는다.
   TOOL_H="$(printf '%s' "$INPUT" | grep -oE '"tool_name"[[:space:]]*:[[:space:]]*"[A-Za-z_]+"' | head -n1 | grep -oE '"[A-Za-z_]+"$' | tr -d '"')"
   case "$TOOL_H" in
     Edit|Write|MultiEdit|NotebookEdit|Update)
@@ -169,8 +173,21 @@ if [ -z "$VERDICT" ]; then
   esac
   # 즉시 내지 않고 모아둔다 — 이 경로는 아래에서 차단(exit 2)으로 끝날 수도 있고,
   # 그때는 stdout JSON 이 아니라 차단 메시지 본문에 섞어야 모델이 본다.
-  log_gate "W021" "휴리스틱 열화: python3 부재 또는 판정기 실패"
-  note '⚠️ HRN-W021 — python3 가 없어 게이트가 휴리스틱 판정으로 열화했습니다. 조치: (a) python3 를 설치하면 정확 판정으로 돌아옵니다 (b) 그대로 진행 — 판정은 보수적입니다.'
+  # 실측에서 잡힌 거짓 진단: 이 경로는 ⑴python3 부재 ⑵판정기 파일 부재 ⑶판정기 실패
+  # 세 경우에 모두 오는데, 메시지가 늘 "python3 가 없어"라고 단정했다. python3 가
+  # 멀쩡한 환경에서도 그렇게 보고했다 — **틀린 원인은 틀린 조치를 부른다.** 가른다.
+  if ! command -v python3 >/dev/null 2>&1; then
+    DEG_CAUSE="python3 가 없습니다"
+    DEG_FIX="python3 를 설치하면"
+  elif [ ! -f "$DECIDER" ]; then
+    DEG_CAUSE="판정기 파일이 없습니다 (${DECIDER})"
+    DEG_FIX="판정기 파일을 복구하면"
+  else
+    DEG_CAUSE="판정기가 빈 출력으로 실패했습니다 (${DECIDER})"
+    DEG_FIX="판정기 오류를 고치면"
+  fi
+  log_gate "W021" "휴리스틱 열화: ${DEG_CAUSE}"
+  note "⚠️ HRN-W021 — ${DEG_CAUSE} — 게이트가 휴리스틱 판정으로 열화했습니다. 조치: (a) ${DEG_FIX} 정확 판정으로 돌아옵니다 (b) 그대로 진행 — 판정은 보수적입니다."
 fi
 
 case "$VERDICT" in
