@@ -223,7 +223,33 @@ echo
 # ---- 5. 대화형 세팅 (vault_root) --------------------------------------------
 
 VAULT_ROOT=""
+
+# 묻는 조건을 **좁게** 잡는다 (silent-failure-guard 설계 §3-2):
+#   - 신규 생성이거나, 적힌 경로가 죽었을 때(missing)만 묻는다.
+#   - 정상(ok)이면 묻지 않는다 — 매 설치마다 같은 걸 물으면 그게 잔소리다.
+#   - 미지정(empty)도 묻지 않는다 — 신규 생성 경로에서 이미 물었고, 건너뛴 건 선택이다.
+# 이 절이 없던 탓에 이 레포 자신의 vault_root 가 2026-08-14 이후 죽은 경로를 가리킨 채
+# 방치됐다(HRN-W023 실측). 탐지기는 멀쩡했고 호출 조건이 좁았던 것이 원인이다.
+VR_STATE="empty"; VR_PATH=""
+if [ -f "$TARGET_CONFIG" ]; then
+  IFS="$(printf '\t')" read -r VR_STATE VR_PATH < <(vault_root_state "$TARGET_CONFIG") || true
+fi
+
+ASK_VAULT=0
 if [ "$CONFIG_CREATED" -eq 1 ]; then
+  ASK_VAULT=1
+elif [ "$VR_STATE" = "missing" ]; then
+  if [ -t 0 ]; then
+    ASK_VAULT=1
+    warn "⚠️ HRN-W023 — 컨피그의 vault 경로가 없습니다: ${VR_PATH}"
+  else
+    # 비대화형은 묻지 않는다 — CI·스크립트 설치를 세우지 않는다(install/approve 와 같은 태도).
+    warn "⚠️ HRN-W023 — 컨피그의 vault 경로가 없습니다: ${VR_PATH} (비대화형이라 묻지 않고 값을 유지합니다)"
+    say "   조치: (a) 대화형으로 install/setup 재실행 (b) 다른 PC 의 볼트라면 그대로 두십시오 — 문서는 로컬에 쌓입니다"
+  fi
+fi
+
+if [ "$ASK_VAULT" -eq 1 ]; then
   # vault 탐지 → 번호 선택. 탐지 실패 시 기존 자유 입력으로 열화한다(설계 §3-5).
   VAULT_LINES="$(detect_obsidian_vaults)"
 
@@ -238,7 +264,13 @@ if [ "$CONFIG_CREATED" -eq 1 ]; then
 
     say "Obsidian 등록 vault ${#VAULT_PATHS[@]}개를 찾았습니다."
     VAULT_OPTS+=("직접 경로 입력")
-    VAULT_OPTS+=("건너뛰기 (나중에 harness.config.yaml 에서 지정)")
+    # 다중 PC 가 전제인 환경에서는 "고치지 않는 것"이 정답인 경우가 실재한다
+    # (사용자 표현: "이pc에서는"). 그래서 유지를 **명시적 선택지**로 올린다.
+    if [ "$VR_STATE" = "missing" ]; then
+      VAULT_OPTS+=("그대로 둔다 — 다른 PC 의 볼트다 (경고만 남는다)")
+    else
+      VAULT_OPTS+=("건너뛰기 (나중에 harness.config.yaml 에서 지정)")
+    fi
 
     VAULT_N=${#VAULT_OPTS[@]}
     VAULT_PICK="$(ask_choice "storage.vault_root 를 지정하시겠습니까?" "$VAULT_N" "${VAULT_OPTS[@]}")"
@@ -439,8 +471,10 @@ if command -v git >/dev/null 2>&1 && git -C "$TARGET_DIR" rev-parse --git-dir >/
         [ -n "$_sk" ] && GI_SKILL_PATS+=("/.claude/skills/${_sk}")
       done < <(exposed_skill_names "$TARGET_DIR")
     fi
+    # gate.log 는 런타임 산출물이고 머신마다 다르다 — 커밋 대상이 아니다.
     for pat in /.harness/install/ /.harness/adapters/ /.harness/core/ \
                /.harness/skills/ /.harness/templates/ /.harness/config/ /.harness/.meta \
+               /.harness/gate.log \
                ${GI_SKILL_PATS+"${GI_SKILL_PATS[@]}"}; do
       if ! grep -qxF "$pat" "$TARGET_GITIGNORE"; then
         if [ "$GI_ADDED" -eq 0 ]; then
@@ -505,11 +539,24 @@ say "스킬 노출  : ${EXPOSE_STATUS}"
 say "승인 게이트 : gate.enforce=$(yaml_get "${TARGET_CONFIG}" gate.enforce) · 기존 작업 백필: ${BACKFILL_STATUS}"
 say "superpowers : ${SUPERPOWERS_STATUS}"
 say "컨피그 검증: ${CONFIG_VALID}"
+# 설치가 끝난 시점의 vault 상태를 **다시 읽어** 찍는다 — 위에서 값을 바꿨을 수 있다.
+VR_FINAL="empty"; VRP_FINAL=""
+if [ -f "$TARGET_CONFIG" ]; then
+  IFS="$(printf '\t')" read -r VR_FINAL VRP_FINAL < <(vault_root_state "$TARGET_CONFIG") || true
+fi
+case "$VR_FINAL" in
+  ok)      say "vault 경로  : 확인 (${VRP_FINAL})" ;;
+  missing) warn "vault 경로  : ⚠️ HRN-W023 경로 없음 (${VRP_FINAL}) — ⑪ 저장이 건너뛰어집니다" ;;
+  *)       say "vault 경로  : 미지정 (HRN-W010 — 문서는 로컬에 쌓입니다)" ;;
+esac
 say ".gitignore  : ${GITIGNORE_STATUS}"
 echo
 say "다음 할 일:"
 if [ "$CONFIG_CREATED" -eq 1 ] && [ -z "$VAULT_ROOT" ]; then
   say "  - harness.config.yaml의 storage.vault_root 지정 (미지정 시 HRN-W010이 매 실행 안내됩니다)"
+fi
+if [ "$VR_FINAL" = "missing" ]; then
+  say "  - storage.vault_root 를 실제 vault 경로로 고치십시오 — 다른 PC 의 볼트라면 그대로 두어도 됩니다"
 fi
 say "  - ${TARGET_DIR}에서 Claude Code 세션을 시작하면 SessionStart 훅으로 플레이북이 로드됩니다"
 say "  - PRD.md·CLAUDE.md·AGENTS.md가 없으면 그 세션에서 초기 세팅을 제안합니다 (set-initial)"
