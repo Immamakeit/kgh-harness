@@ -2501,8 +2501,43 @@ test_gate_hook
 test_approve_cli
 test_injection_modes
 test_skill_exposure
+test_degradation_cause() {
+  group "휴리스틱 열화 — 보고하는 원인이 실제 원인과 일치한다"
+
+  # 실측(2026-11-06)에서 잡혔다: 메시지가 늘 "python3 가 없어"라고 단정했고, python3 가
+  # 멀쩡하고 판정기만 없는 환경에서도 그렇게 보고했다. 틀린 원인은 틀린 조치를 부른다.
+  local t h o e rc msg
+  t="$(mktemp -d "${WORK}/dg.XXXXXX")"
+  gate_fixture "$t"
+  : > "${t}/.harness/work/demo/2026-11-06/설계.md"        # 무장 (.approved 없음)
+
+  # 판정기 없는 위치로 훅을 복사한다 — python3 는 그대로 있다.
+  h="${t}/hooks"; mkdir -p "$h"
+  cp "$GATE_HOOK" "${h}/pre-tool-use.sh"
+  assert_absent "${h}/gate_decide.py" "픽스처 전제: 판정기 파일이 없다"
+
+  o="$(mktemp "${WORK}/dgo.XXXXXX")"; e="$(mktemp "${WORK}/dge.XXXXXX")"
+  rc=0
+  printf '{"tool_name":"Write","tool_input":{"file_path":"%s"}}' \
+    "${t}/.harness/work/demo/2026-11-06/메모.md" \
+    | CLAUDE_PROJECT_DIR="$t" bash "${h}/pre-tool-use.sh" >"$o" 2>"$e" || rc=$?
+  assert_eq "$rc" "0" "판정기 부재 → 작업 문서 안 쓰기는 휴리스틱으로 통과"
+  assert_present "${t}/.harness/gate.log" "열화 사실이 gate.log 에 남는다"
+
+  msg="$(cat "$o" "$e" 2>/dev/null)"
+  if command -v python3 >/dev/null 2>&1; then
+    assert_contains "$msg" "판정기 파일이 없습니다" "경고가 실제 원인(판정기 부재)을 말한다"
+    assert_not_contains "$msg" "python3 가 없" "python3 가 있는데 없다고 단정하지 않는다"
+    assert_contains "$(cat "${t}/.harness/gate.log")" "판정기 파일이 없습니다" \
+      "로그도 실제 원인을 남긴다"
+  else
+    note "python3 없음 — 원인 분별 단정 3건 건너뜀 (이 환경에서는 python3 부재가 실제 원인)"
+  fi
+}
+
 test_vault_root_guard
 test_fail_open_visibility
+test_degradation_cause
 
 printf '\n=== 요약 ===\n'
 printf 'PASS: %d  FAIL: %d\n' "$PASS" "$FAIL"
