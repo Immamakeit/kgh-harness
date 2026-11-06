@@ -152,6 +152,14 @@ else
 fi
 echo
 
+# ---- 3c. 스킬 노출 (.claude/skills/) --------------------------------------
+# PRD §5(2026-11-06 개정) — 직독 + 노출 병행. 스킬 description 이 Claude Code 의
+# 디스커버리에 걸려 자동 트리거·/<스킬명> 호출이 가능해진다. 충돌은 가리지 않고 W022.
+
+EXPOSE_STATUS="$(expose_skills "$TARGET_DIR" "$HARNESS_DIR")"
+ok "스킬 노출: ${EXPOSE_STATUS}"
+echo
+
 # ---- 4. 컨피그 스키마 diff (안내만, 자동 추가 금지) --------------------------
 
 TARGET_CONFIG="${TARGET_DIR}/harness.config.yaml"
@@ -232,6 +240,7 @@ if [ "${#GONE_KEYS[@]}" -gt 0 ]; then
 else
   say "사라진 설정 키: 없음"
 fi
+say "스킬 노출  : ${EXPOSE_STATUS}"
 say "승인 게이트: 기존 작업 백필 — ${BACKFILL_STATUS}"
 say "컨피그 검증: ${CONFIG_VALID}"
 echo

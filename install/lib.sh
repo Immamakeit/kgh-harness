@@ -354,6 +354,104 @@ backfill_approvals() {
   printf '%s\n' "$count"
 }
 
+# ---- 스킬 노출 (.claude/skills/, PRD §5 2026-11-06 개정) ---------------------
+
+# harness_skill_names <하네스경로>  → 스킬 이름을 한 줄씩 stdout
+harness_skill_names() {
+  local hn="$1" d
+  [ -d "${hn}/skills" ] || return 0
+  for d in "${hn}/skills"/*/; do
+    [ -f "${d}SKILL.md" ] || continue
+    basename "$d"
+  done
+}
+
+# exposed_skill_names <프로젝트경로>  → **우리가 소유한** 노출 링크의 이름만 stdout
+#
+# 하네스 스킬 목록이 아니라 "실제로 우리가 만든 링크"를 센다. 충돌로 건너뛴 이름
+# (= 그 프로젝트 자신의 스킬)을 섞으면 .gitignore 가 남의 스킬을 가려버린다
+# (2026-11-06 실측: design-doc 충돌 케이스에서 그 프로젝트의 스킬이 무시 목록에 들어갔다).
+exposed_skill_names() {
+  local target="$1" dir link
+  dir="${target}/.claude/skills"
+  [ -d "$dir" ] || return 0
+  for link in "$dir"/*; do
+    [ -L "$link" ] || continue
+    case "$(readlink "$link")" in
+      */.harness/skills/*) basename "$link" ;;
+    esac
+  done
+}
+
+# expose_skills <프로젝트경로> <하네스경로>  → 상태 한 줄을 stdout (로그는 stderr)
+#
+# <프로젝트>/.claude/skills/<이름> → ../../.harness/skills/<이름> 상대 심링크.
+# 상대 링크를 쓰는 이유: 프로젝트를 다른 경로로 옮겨도 살아 있어야 한다.
+#
+# **조용히 가리지 않는다.** 같은 이름의 남의 스킬(실디렉터리이거나, 우리 것이 아닌
+# 링크)이 있으면 HRN-W022 로 보고하고 건너뛴다 — HRN-E015 와 같은 철학이지만 설치를
+# 막을 이유는 없어 경고(W)다.
+#
+# 이 노출은 플레이북 §1의 파일 직독을 **대체하지 않는다.** 구간별 실행은 그대로 직독이고,
+# 노출은 자동 트리거와 사용자의 직접 호출(/<스킬명>)을 가능하게 하는 추가 경로다.
+expose_skills() {
+  local target="$1" hn="$2" enabled dir name link created=0 kept=0 conflict=0 stale=0
+  local -a conflicts=()
+
+  enabled="$(yaml_get "${target}/harness.config.yaml" "skills.expose_to_claude")"
+  # 해석 규칙: false 가 아닌 값은 전부 true (노출은 추가 경로일 뿐이라 켜진 쪽 부작용이 작다)
+  if [ "$enabled" = "false" ]; then
+    printf '꺼짐 (skills.expose_to_claude: false)\n'
+    return 0
+  fi
+
+  dir="${target}/.claude/skills"
+  mkdir -p "$dir" 2>/dev/null || {
+    printf '실패 (%s 를 만들 수 없음)\n' "$dir"
+    return 0
+  }
+
+  # 1) 죽은 링크 청소 — 하네스에서 사라진 스킬의 링크를 남기지 않는다
+  for link in "$dir"/*; do
+    [ -L "$link" ] || continue
+    case "$(readlink "$link")" in
+      *.harness/skills/*|*/skills/*)
+        if [ ! -e "$link" ]; then rm -f "$link"; stale=$((stale + 1)); fi
+        ;;
+    esac
+  done
+
+  # 2) 노출
+  while IFS= read -r name; do
+    [ -n "$name" ] || continue
+    link="${dir}/${name}"
+    if [ -L "$link" ]; then
+      case "$(readlink "$link")" in
+        */.harness/skills/"$name"|*/skills/"$name") kept=$((kept + 1)); continue ;;
+        *) conflicts+=("$name (남의 심링크)"); conflict=$((conflict + 1)); continue ;;
+      esac
+    elif [ -e "$link" ]; then
+      conflicts+=("$name (실디렉터리)"); conflict=$((conflict + 1)); continue
+    fi
+    if ln -s "../../.harness/skills/${name}" "$link" 2>/dev/null; then
+      created=$((created + 1))
+    elif cp -R "${hn}/skills/${name}" "$link" 2>/dev/null; then
+      created=$((created + 1))
+      note "  ${name}: 심링크 불가 → 복사로 열화했습니다 (update 때 다시 동기화됩니다)"
+    else
+      conflicts+=("$name (링크·복사 모두 실패)"); conflict=$((conflict + 1))
+    fi
+  done < <(harness_skill_names "$hn")
+
+  if [ "$conflict" -gt 0 ]; then
+    hrn_warn "W022" "같은 이름의 스킬이 이미 있어 노출을 건너뛴 항목 ${conflict}개: ${conflicts[*]}" \
+      "한쪽 스킬 이름을 바꾼 뒤 install/update 를 다시 실행하세요" \
+      "노출 자체가 필요 없으면 harness.config.yaml 의 skills.expose_to_claude 를 false 로 바꾸세요"
+  fi
+
+  printf '생성 %d · 유지 %d · 충돌 %d · 죽은링크 정리 %d\n' "$created" "$kept" "$conflict" "$stale"
+}
+
 # ---- 실행체 실존 예외처리 (B7, 설계 §3-4 L1) --------------------------------
 
 # read_active_harness <yaml파일>  → active_harness 값(주석·따옴표 제거)을 stdout

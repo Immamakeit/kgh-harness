@@ -379,6 +379,14 @@ else
 fi
 echo
 
+# ---- 6c. 스킬 노출 (.claude/skills/) --------------------------------------
+# PRD §5(2026-11-06 개정) — 직독 + 노출 병행. 스킬 description 이 Claude Code 의
+# 디스커버리에 걸려 자동 트리거·/<스킬명> 호출이 가능해진다. 충돌은 가리지 않고 W022.
+
+EXPOSE_STATUS="$(expose_skills "$TARGET_DIR" "$HARNESS_DIR")"
+ok "스킬 노출: ${EXPOSE_STATUS}"
+echo
+
 # ---- 7. .harness/.meta 기록 --------------------------------------------------
 
 SOURCE_COMMIT="unknown"
@@ -420,8 +428,19 @@ if command -v git >/dev/null 2>&1 && git -C "$TARGET_DIR" rev-parse --git-dir >/
       GI_CREATED="yes"
     fi
     GI_ADDED=0
+    # 노출 심링크도 재생성물이라 무시한다. **`/.claude/skills/` 를 통째로 무시하지
+    # 않는다** — 그러면 그 프로젝트 자신의 스킬까지 가려진다. 우리가 만든 이름만 줄 단위로.
+    GI_SKILL_PATS=()
+    if [ "${EXPOSE_STATUS%% *}" != "꺼짐" ]; then
+      # 하네스 스킬 전체가 아니라 **우리가 실제로 만든 링크**만 센다 — 충돌로 건너뛴
+      # 이름(= 그 프로젝트 자신의 스킬)을 무시 목록에 넣으면 남의 스킬을 가린다.
+      while IFS= read -r _sk; do
+        [ -n "$_sk" ] && GI_SKILL_PATS+=("/.claude/skills/${_sk}")
+      done < <(exposed_skill_names "$TARGET_DIR")
+    fi
     for pat in /.harness/install/ /.harness/adapters/ /.harness/core/ \
-               /.harness/skills/ /.harness/templates/ /.harness/config/ /.harness/.meta; do
+               /.harness/skills/ /.harness/templates/ /.harness/config/ /.harness/.meta \
+               ${GI_SKILL_PATS+"${GI_SKILL_PATS[@]}"}; do
       if ! grep -qxF "$pat" "$TARGET_GITIGNORE"; then
         if [ "$GI_ADDED" -eq 0 ]; then
           {
@@ -481,6 +500,7 @@ say "대상 경로   : ${TARGET_DIR}"
 say "소스 커밋   : ${SOURCE_COMMIT}"
 say "컨피그      : ${CONFIG_STATUS} (${TARGET_CONFIG})"
 say "훅          : ${HOOK_STATUS}"
+say "스킬 노출  : ${EXPOSE_STATUS}"
 say "승인 게이트 : gate.enforce=$(yaml_get "${TARGET_CONFIG}" gate.enforce) · 기존 작업 백필: ${BACKFILL_STATUS}"
 say "superpowers : ${SUPERPOWERS_STATUS}"
 say "컨피그 검증: ${CONFIG_VALID}"
