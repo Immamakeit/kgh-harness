@@ -174,12 +174,19 @@
 - 모드는 컨피그 `gate.enforce`: `block`(기본) · `warn`(통과시키되 경고) · `off`.
 - 게이트 자체가 판정할 수 없으면(컨피그 해석 실패·python3 부재 등) **통과시키고**
   `HRN-W021` 을 낸다 — 게이트 고장이 작업을 세우지 않는다.
-- **통과시키면서 내는 경고는 `.harness/gate.log` 에 기록된다.** 공식 훅 문서가
-  *"Claude never sees stderr from a hook that exits 0"* 라고 못박고 있어서, `exit 0`
-  경로의 stderr 는 **사용자도 모델도 보지 못한다**(디버그 로깅 사용자만 본다 — 실측).
-  그래서 `W021`·`warn` 모드 경고는 로그 + stdout JSON(`systemMessage` ·
-  `additionalContext`) 으로 낸다. 차단(exit 2)의 stderr 는 모델에게 전달되는 것이
-  문서로 확인된 경로라 그대로 둔다.
+- **통과시키면서 내는 경고는 세 경로로 전부 낸다.** 채널마다 수신자가 다르다
+  (2026-11-06 실측, Claude Code 2.1.319):
+
+  | 경로 | 누가 보는가 |
+  |---|---|
+  | `.harness/gate.log` | 사후 추적 — 유일하게 기록이 남는다 |
+  | stdout JSON `systemMessage` | **사용자만** (`PreToolUse:<도구> says: …` 알림) |
+  | stdout JSON `additionalContext` | **모델만** |
+  | stderr + `exit 0` | **아무도 못 본다** — 디버그 로그에만 남는다 |
+
+  공식 훅 문서가 *"Claude never sees stderr from a hook that exits 0"* 라고 못박은 대로다.
+  그래서 `W021`·`warn` 모드 경고는 로그 + JSON 두 필드를 함께 낸다 — 하나만 내면
+  사용자나 모델 한쪽이 못 본다. 차단(exit 2)의 stderr 는 모델에게 전달된다(문서 + 실측).
   `install/approve --list` 가 fail-open 누적 건수를 보고한다 — **게이트가 조용히 고장난
   채 전부 통과시키고 있는지 확인하는 명령이 이것이다.**
 - 이 장치는 **표류를 잡는 것**이고 적대적 우회를 막지 못한다(셸 경유 임의 쓰기는

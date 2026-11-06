@@ -123,8 +123,9 @@ bootstrap:
 - 모드는 `gate.enforce`: `block`(기본) · `warn`(통과시키되 경고) · `off`.
 - 게이트가 판정할 수 없으면 **통과시키고** `HRN-W021`을 냅니다 — 게이트 고장이
   작업을 세우지 않습니다. 그 기록은 `.harness/gate.log`에 남고,
-  `install/approve --list`가 누적 건수를 보고합니다. (`exit 0` 훅의 stderr는
-  Claude Code가 디버그 로깅에만 쓰므로, stderr만으로는 아무도 못 봅니다)
+  `install/approve --list`가 누적 건수를 보고합니다. 경고는 사용자(`systemMessage`)와
+  모델(`additionalContext`)에게 따로 전달됩니다 — 채널마다 수신자가 다르고,
+  `exit 0` 훅의 stderr는 디버그 로그에만 남아 **아무도 못 봅니다**(2026-11-06 실측).
 - 설치·업데이트 때 **기존 작업에는 마커를 백필**합니다. 안 그러면 이미 끝난 작업까지
   승인 대기로 판정돼 설치 직후 모든 편집이 막힙니다. 진행 중인 작업이 있으면 그
   작업의 `.approved`를 지우세요.
