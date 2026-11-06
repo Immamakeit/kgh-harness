@@ -69,6 +69,25 @@ list_tasks() {
     fi
   done < <(find "$WORKROOT" -mindepth 1 -maxdepth 4 -type f -name "$DESIGN" 2>/dev/null | sort)
   [ "$found" -eq 1 ] || note "설계 문서를 가진 작업이 없습니다."
+
+  # fail-open 기록 보고 (silent-failure-guard T8).
+  # 게이트가 조용히 고장난 채 전부 통과시키는 상태를 깨는 가장 짧은 경로가 이것이다 —
+  # 사용자가 게이트 상태를 묻는 유일한 명령이라 여기 붙인다. 0건이면 아무것도 내지 않는다.
+  local log="${TARGET_DIR}/.harness/gate.log" n last tab
+  [ -f "$log" ] || log="${TARGET_DIR}/gate.log"     # 소스 레포 도그푸딩 경로
+  # GNU grep 의 ERE 는 '\t' 를 탭으로 읽지 않는다(실측: 0건으로 나왔다) — 실제 탭 문자를 쓴다.
+  tab="$(printf '\t')"
+  if [ -f "$log" ]; then
+    n="$(grep -cF "${tab}W021${tab}" "$log" 2>/dev/null || true)"
+    if [ "${n:-0}" -gt 0 ]; then
+      last="$(grep -F "${tab}W021${tab}" "$log" 2>/dev/null | tail -n1 | cut -f1,3)"
+      echo
+      warn "⚠️ fail-open 기록 ${n}건 — 게이트가 판정하지 못하고 통과시킨 호출이 있습니다."
+      warn "   최근: ${last}"
+      say  "   전체: ${log}"
+      say  "   조치: (a) 위 사유를 고치십시오 (b) 그대로 두면 그 호출들은 게이트 없이 지나간 것입니다"
+    fi
+  fi
 }
 
 # ---- 인자 파싱 --------------------------------------------------------------
